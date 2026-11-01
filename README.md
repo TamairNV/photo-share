@@ -15,6 +15,7 @@ The app listens on `127.0.0.1:8100`. The Cloudflare tunnel points `share.tamairn
 **Guests**
 - Photos grouped by day and sorted by time taken (EXIF for photos, recording time for videos, otherwise file date)
 - Full screen viewer with swipe/arrow keys and the capture time
+- **Save to Photos** on phones (straight into the camera roll via the share sheet, 20 at a time)
 - Download one, **select several and download as a zip**, select a whole day, or download everything
 - Optional: password and expiry date
 

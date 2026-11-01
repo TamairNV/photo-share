@@ -31,7 +31,8 @@
 <span class="row"><a class="btn" href="/e/{{ token }}/download.zip" id="allbtn">⬇ Download all</a>
 <button class="sec" type="button" id="selbtn" onclick="toggleSelect()">Select</button>
 <button class="sec" type="button" id="selall" style="display:none" onclick="selAll()">Select all</button>
-<button type="button" id="dlsel" style="display:none" onclick="dlSelected()">Download selected</button></span>
+<button type="button" id="dlsel" style="display:none" onclick="dlSelected()">Download selected</button>
+<button type="button" id="savesel" class="savebtn" style="display:none" onclick="saveSelected(this)">📲 Save to Photos</button></span>
 <span class="mut" id="selinfo"></span></div>{% else %}<p class="mut">No photos yet. Check back soon.</p>{% endif %}
 
 {% set multi_day = (items|map(attribute="day")|unique|list|length) > 1 %}
@@ -49,7 +50,7 @@
 
 
 <div id="lb"><div class="top"><span id="cap" class="mut"></span>
-<span class="row"><a id="dl" class="btn">⬇ Download</a><button class="sec" onclick="closeLb()">✕</button></span></div>
+<span class="row"><button type="button" id="savelb" class="savebtn" style="display:none" onclick="saveCurrent(this)">📲 Save</button><a id="dl" class="btn">⬇ Download</a><button class="sec" onclick="closeLb()">✕</button></span></div>
 <button class="nav" id="prev" onclick="step(-1)">‹</button><div id="media"></div><button class="nav" id="next" onclick="step(1)">›</button></div>
 <script>
 const items = {{ items|tojson }}, tok = {{ token|tojson }}, enc = n => encodeURIComponent(n);
@@ -59,6 +60,7 @@ function show(){
   const it = items[cur], n = enc(it.name);
   m.innerHTML = it.video ? `<video src="/e/${tok}/file/${n}" controls autoplay playsinline></video>` : `<img src="/e/${tok}/preview/${n}">`;
   document.getElementById('dl').href = `/e/${tok}/file/${n}?dl=1`;
+  const sb = document.getElementById('savelb'); if (sb && sb.textContent !== '📲 Save') { sb.textContent = '📲 Save'; }
   document.getElementById('cap').textContent = `${it.when}` + (it.by && who[it.by] ? `  ·  by ${who[it.by]}` : '') + `  ·  ${cur+1} / ${items.length}`;
   for (const d of [1, -1]) { const nb = items[(cur + d + items.length) % items.length]; if (!nb.video) new Image().src = `/e/${tok}/preview/${enc(nb.name)}`; }
 }
@@ -82,11 +84,61 @@ function toggleSelect(){ selecting = !selecting; grid.classList.toggle('selectin
   if (!selecting) grid.querySelectorAll('.sel').forEach(e => e.classList.remove('sel')); upd(); }
 function selAll(){ const t = [...grid.querySelectorAll('.it:not(.hid)')], all = t.every(x => x.classList.contains('sel')); t.forEach(x => x.classList.toggle('sel', !all)); upd(); }
 function upd(){ const n = grid.querySelectorAll('.sel').length, b = document.getElementById('dlsel');
+  resetSave(); const sv = document.getElementById('savesel'); sv.style.display = (n && CAN_SAVE) ? '' : 'none';
   document.getElementById('selall').style.display = selecting ? '' : 'none';
   b.style.display = n ? '' : 'none'; b.textContent = `⬇ Download ${n} selected`;
   document.getElementById('selinfo').textContent = selecting ? (n ? '' : 'Tap photos to pick them') : ''; }
 function dlSelected(){ const f = document.getElementById('selform'); f.innerHTML = '';
   grid.querySelectorAll('.sel').forEach(it => { const i = document.createElement('input'); i.type = 'hidden'; i.name = 'names'; i.value = items[+it.dataset.i].name; f.appendChild(i); });
   f.submit(); }
+
+// ---------- Save to Photos (phones): Web Share API with files -> iOS "Save Image(s)", Android "Save to Gallery" ----------
+const MIME = {jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', gif:'image/gif', webp:'image/webp', heic:'image/heic',
+  heif:'image/heif', tif:'image/tiff', tiff:'image/tiff', bmp:'image/bmp', mp4:'video/mp4', m4v:'video/mp4', mov:'video/quicktime', webm:'video/webm'};
+const BATCH_FILES = 20, BATCH_BYTES = 200 * 1048576;   // iOS gets unreliable beyond roughly this per share
+const CAN_SAVE = (() => { try { return matchMedia('(pointer:coarse)').matches && !!navigator.canShare &&
+  navigator.canShare({files: [new File([new Blob(['x'])], 'x.jpg', {type: 'image/jpeg'})]}); } catch (e) { return false; } })();
+if (CAN_SAVE) document.getElementById('savelb').style.display = '';
+let saveQueue = [], ready = null;   // ready = files fetched but share needs a fresh tap
+function resetSave(){ saveQueue = []; ready = null; const b = document.getElementById('savesel'); if (b) b.textContent = '📲 Save to Photos'; }
+async function fetchFile(name){
+  const r = await fetch(`/e/${tok}/file/${enc(name)}`); if (!r.ok) throw new Error(r.status);
+  const ext = name.split('.').pop().toLowerCase(), base = name.split('/').pop();
+  return new File([await r.blob()], base, {type: MIME[ext] || 'application/octet-stream'});
+}
+async function nextBatch(btn){
+  const out = []; let bytes = 0; const n = Math.min(saveQueue.length, BATCH_FILES);
+  while (saveQueue.length && out.length < BATCH_FILES && bytes < BATCH_BYTES) {
+    if (n > 1) btn.textContent = `Preparing ${out.length + 1} of ${n}…`;
+    const f = await fetchFile(saveQueue.shift()); out.push(f); bytes += f.size; }
+  return out;
+}
+async function share(files, btn, label){
+  try { await navigator.share({files}); return true; }
+  catch (e) {
+    if (e.name === 'NotAllowedError') { ready = files; btn.textContent = 'Ready. Tap to save'; return false; }  // tap expired while downloading
+    if (e.name !== 'AbortError') alert("Couldn't open the save menu. Use Download instead.");
+    btn.textContent = label; return false;
+  }
+}
+async function runSave(btn, label){
+  if (ready) { const f = ready; ready = null; btn.textContent = label; if (!await share(f, btn, label)) return; }
+  else {
+    btn.textContent = 'Preparing…';
+    let files; try { files = await nextBatch(btn); } catch (e) { btn.textContent = label; alert('Download failed, try again.'); return; }
+    if (!navigator.canShare({files})) { btn.textContent = label; alert('Your phone can\'t save these here. Use Download instead.'); return; }
+    if (!await share(files, btn, label)) return;
+  }
+  btn.textContent = saveQueue.length ? `📲 Save next ${Math.min(saveQueue.length, BATCH_FILES)} (${saveQueue.length} left)` : '✓ Saved';
+  if (!saveQueue.length) setTimeout(() => { btn.textContent = label; }, 2500);
+}
+function saveSelected(btn){
+  if (!saveQueue.length && !ready) saveQueue = [...grid.querySelectorAll('.sel')].map(t => items[+t.dataset.i].name);
+  runSave(btn, '📲 Save to Photos');
+}
+function saveCurrent(btn){
+  if (!ready || ready[0].name !== items[cur].name.split('/').pop()) { ready = null; saveQueue = [items[cur].name]; }
+  runSave(btn, '📲 Save');
+}
 </script>
 {% endblock %}
