@@ -1,0 +1,104 @@
+{% extends "base.html" %}{% block title %}{{ ev.name }} · Admin{% endblock %}{% block body %}
+<header><div><a href="/admin">← Events</a><h1>{{ ev.name }}</h1>
+<span class="mut">{{ items|length }} items · {{ total|size }} · 👁 {{ ev.views }} views · ⬇ {{ ev.downloads }} downloads</span></div>
+<a class="btn sec" href="/e/{{ ev.token }}" target="_blank">View as guest</a></header>
+
+{% if saved %}<p class="ok">✓ Saved</p>{% endif %}
+{% if rescanned %}<p class="ok">✓ Rescanned. Building {{ rescanned }} new thumbnails in the background.</p>
+{% elif missing_thumbs %}<p class="mut">{{ missing_thumbs }} thumbnails not built yet. They build on first view, or hit Rescan below.</p>{% endif %}
+
+<div class="card row" style="align-items:flex-start;gap:18px">
+<img src="/admin/events/{{ slug }}/qr.svg" alt="QR code" style="width:120px;height:120px;border-radius:8px;background:#fff">
+<div style="flex:1;min-width:240px">
+<div class="row" style="margin-bottom:8px"><b>Share link:</b> <code id="url">{{ url }}</code>
+<button class="sec" onclick="copyText('url', this)">Copy</button>
+<a class="btn sec" href="/admin/events/{{ slug }}/qr.svg" download="{{ slug }}-qr.svg">Download QR</a></div>
+{% if not ev.public %}<p style="color:var(--bad);margin:4px 0">Link is turned off. Guests can't see this event.</p>{% endif %}
+{% if expired %}<p style="color:var(--bad);margin:4px 0">Link expired on {{ ev.expires|nicedate }}.</p>{% elif ev.expires %}<p class="mut" style="margin:4px 0">Link works until {{ ev.expires|nicedate }}.</p>{% endif %}
+{% if ev.password %}<p class="mut" style="margin:4px 0">🔒 Guests need the password.</p>{% endif %}
+<p class="mut" style="margin:4px 0">Folder on server: <code>{{ folder }}</code></p>
+</div></div>
+
+<h2>Upload</h2>
+{% set upload_url = "/admin/events/" ~ slug ~ "/upload" %}{% include "_uploader.html" %}
+
+<h2>Bulk copy over your network (rsync)</h2>
+<div class="card">
+<p class="mut" style="margin-top:0">Fastest for whole SD cards. Runs on your Mac over the LAN and skips Cloudflare entirely. Subfolders are fine.</p>
+<div class="row" style="margin-bottom:8px">
+<button class="sec" type="button" onclick="preset('/Volumes/CARD/DCIM/')">SD card (DCIM)</button>
+<button class="sec" type="button" onclick="preset('/Volumes/CARD/DCIM/DJI_001/')">DJI drone</button>
+<button class="sec" type="button" onclick="preset('/Volumes/CARD/DCIM/100GOPRO/')">GoPro</button>
+<button class="sec" type="button" onclick="preset('~/Pictures/FOLDER/')">Folder on Mac</button></div>
+<div class="row" style="margin-bottom:8px"><span class="mut" style="width:90px">Card name</span><input type="text" id="card" value="NO NAME" style="flex:1" oninput="buildCmd()"></div>
+<div class="row" style="margin-bottom:8px"><span class="mut" style="width:90px">Copy from</span><input type="text" id="src" value="/Volumes/CARD/DCIM/" style="flex:1" oninput="buildCmd()"></div>
+<div class="row"><code id="cmd" style="flex:1;padding:10px;font-size:13px"></code><button type="button" onclick="copyText('cmd', this)">Copy command</button></div>
+<p class="mut" style="font-size:13px;margin-bottom:0">Tip: drag a folder from Finder into the "Copy from" box to paste its path. When it finishes, hit Rescan to build thumbnails.</p>
+<form method="post" action="/admin/events/{{ slug }}/rescan" style="margin-top:10px"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="sec">↻ Rescan folder</button></form>
+</div>
+
+<h2 class="row" style="justify-content:space-between">Photos ({{ items|length }})
+<span class="row" style="font-size:15px;font-weight:normal">
+<button class="sec" type="button" id="selbtn" onclick="toggleSelect()">Select</button>
+<button class="bad" type="button" id="delbtn" style="display:none" onclick="bulkDelete()">Delete selected</button></span></h2>
+<div class="grid" id="grid">{% for it in items %}
+<div class="it {% if it.video %}vid{% endif %}" data-name="{{ it.name }}" title="{{ it.name }} · {{ it.size|size }}">
+{% if it.video %}<video src="/e/{{ ev.token }}/file/{{ it.name|q }}#t=0.1" preload="metadata" muted></video>
+{% else %}<img loading="lazy" src="/admin/events/{{ slug }}/thumb/{{ it.name|q }}" alt="">{% endif %}
+<span class="chk"></span>
+{% if not it.video %}<form method="post" action="/admin/events/{{ slug }}/cover" style="position:absolute;bottom:6px;right:6px" class="tilebtn">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="name" value="{{ it.name }}">
+<button class="sec" style="padding:3px 9px" title="Use as cover">{% if ev.cover == it.name %}★{% else %}☆{% endif %}</button></form>{% endif %}
+<form method="post" action="/admin/events/{{ slug }}/delete-photos" onsubmit="return confirm('Delete this photo forever?')" style="position:absolute;top:6px;right:6px" class="tilebtn">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="names" value="{{ it.name }}">
+<button class="bad" style="padding:3px 9px" title="Delete">✕</button></form>
+</div>{% endfor %}</div>
+<form method="post" action="/admin/events/{{ slug }}/delete-photos" id="delform"><input type="hidden" name="csrf" value="{{ csrf }}"></form>
+
+<h2>Settings</h2>
+<form method="post" action="/admin/events/{{ slug }}/settings" class="card">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<p class="row"><span style="width:110px">Name</span><input type="text" name="name" value="{{ ev.name }}" style="flex:1"></p>
+<p class="row"><span style="width:110px">Event date</span><input type="date" name="event_date" value="{{ ev.date }}"></p>
+<p class="row" style="align-items:flex-start"><span style="width:110px">Description</span><textarea name="description" rows="2" style="flex:1" placeholder="Shown to guests under the title">{{ ev.description }}</textarea></p>
+<p class="row"><span style="width:110px">Sort photos by</span><select name="sort">{% for k, v in sorts.items() %}<option value="{{ k }}" {% if ev.sort == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></p>
+<p class="row"><span style="width:110px">Password</span><input type="password" name="password" placeholder="{% if ev.password %}Set. Type to change{% else %}None. Type to add one{% endif %}" autocomplete="new-password" style="flex:1">
+{% if ev.password %}<label><input type="checkbox" name="clear_password" value="1"> Remove</label>{% endif %}</p>
+<p class="row"><span style="width:110px">Link expires</span><input type="date" name="expires" value="{{ ev.expires }}"><span class="mut">Leave empty for never</span></p>
+<p><label><input type="checkbox" name="public" value="1" {% if ev.public %}checked{% endif %}> Share link is on</label></p>
+<p><label><input type="checkbox" name="guest_upload" value="1" {% if ev.guest_upload %}checked{% endif %}> Let guests upload their own photos</label></p>
+<p><label><input type="checkbox" name="regen" value="1"> Make a new link (old one stops working)</label></p>
+<button>Save</button></form>
+
+<h2>Delete event</h2>
+<form method="post" action="/admin/events/{{ slug }}/delete" class="card row">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<span class="mut">Deletes the folder and every photo in it. Type <code>{{ slug }}</code> to confirm:</span>
+<input type="text" name="confirm" required><button class="bad">Delete forever</button></form>
+
+<script>
+const SSH = {{ (ssh_target or "user@server")|tojson }}, DEST = {{ (folder ~ "/")|tojson }};
+function shq(s){ return s.startsWith('~/') ? '~/"' + s.slice(2).replace(/(["\\$`])/g, '\\$1') + '"' : '"' + s.replace(/(["\\$`])/g, '\\$1') + '"'; }
+function buildCmd(){
+  let src = document.getElementById('src').value.trim().replace(/^'(.*)'$/, '$1').replace(/\\ /g, ' ');
+  src = src.replace('/Volumes/CARD/', '/Volumes/' + (document.getElementById('card').value.trim() || 'CARD') + '/');
+  if (src && !src.endsWith('/')) src += '/';
+  document.getElementById('cmd').textContent = `rsync -av --progress --exclude='.*' ${shq(src)} ${SSH}:${shq(DEST)}`;
+}
+function preset(p){ document.getElementById('src').value = p; buildCmd(); }
+function copyText(id, btn){ navigator.clipboard.writeText(document.getElementById(id).textContent); const t = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = t, 1500); }
+buildCmd();
+const grid = document.getElementById('grid'); let selecting = false;
+function toggleSelect(){ selecting = !selecting; grid.classList.toggle('selecting', selecting);
+  document.getElementById('selbtn').textContent = selecting ? 'Cancel' : 'Select';
+  document.querySelectorAll('.tilebtn').forEach(f => f.style.display = selecting ? 'none' : '');
+  if (!selecting) grid.querySelectorAll('.sel').forEach(e => e.classList.remove('sel')); upd(); }
+function upd(){ const n = grid.querySelectorAll('.sel').length; const b = document.getElementById('delbtn');
+  b.style.display = n ? '' : 'none'; b.textContent = `Delete ${n} selected`; }
+grid.addEventListener('click', e => { const it = e.target.closest('.it'); if (!it || !selecting) return; e.preventDefault(); it.classList.toggle('sel'); upd(); });
+function bulkDelete(){ const sel = [...grid.querySelectorAll('.sel')]; if (!confirm(`Delete ${sel.length} items forever?`)) return;
+  const f = document.getElementById('delform');
+  sel.forEach(it => { const i = document.createElement('input'); i.type = 'hidden'; i.name = 'names'; i.value = it.dataset.name; f.appendChild(i); });
+  f.submit(); }
+</script>
+{% endblock %}

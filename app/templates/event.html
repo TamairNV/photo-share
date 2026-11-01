@@ -1,0 +1,86 @@
+{% extends "base.html" %}{% block title %}{{ ev.name }}{% endblock %}
+{% block head %}<meta name="robots" content="noindex">
+<meta property="og:title" content="{{ ev.name }}"><meta property="og:description" content="{{ items|length }} photos">
+<style>
+.hero{position:relative;border-radius:14px;overflow:hidden;margin-bottom:18px;min-height:220px;display:flex;align-items:flex-end;background:#1a1a1c center/cover}
+.hero::before{content:"";position:absolute;inset:0;background:linear-gradient(transparent 30%,rgba(0,0,0,.8))}
+.hero .in{position:relative;padding:22px;width:100%}
+.tools{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0;margin-bottom:8px}
+#lb{position:fixed;inset:0;background:rgba(0,0,0,.95);display:none;align-items:center;justify-content:center;z-index:9}
+#lb.on{display:flex}#lb img,#lb video{max-width:96vw;max-height:84vh;object-fit:contain}
+#lb .top{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:12px;gap:8px}
+#lb .nav{position:fixed;top:50%;transform:translateY(-50%);font-size:40px;background:none;padding:10px 18px}
+#prev{left:4px}#next{right:4px}
+@media (max-width:600px){ #lb .nav{display:none}}
+.day{justify-content:space-between;margin:22px 0 10px}.day h2{font-size:17px}
+.it .tm{position:absolute;bottom:5px;left:6px;font-size:12px;color:#fff;text-shadow:0 0 4px #000;opacity:.9;pointer-events:none}
+.it img{transition:transform .25s}.it:hover img{transform:scale(1.04)}
+</style>{% endblock %}
+{% block body %}
+<div class="hero" {% if cover %}style="background-image:url('/e/{{ token }}/preview/{{ cover|q }}')"{% endif %}><div class="in">
+<h1 style="font-size:30px">{{ ev.name }}</h1>
+<div class="mut" style="color:#ddd">{% if ev.date %}{{ ev.date|nicedate }} · {% endif %}{{ items|length }} photos</div>
+{% if ev.description %}<p style="margin:8px 0 0;white-space:pre-line">{{ ev.description }}</p>{% endif %}
+</div></div>
+
+{% if items %}<div class="tools row" style="justify-content:space-between">
+<span class="row"><a class="btn" href="/e/{{ token }}/download.zip" id="allbtn">⬇ Download all</a>
+<button class="sec" type="button" id="selbtn" onclick="toggleSelect()">Select</button>
+<button class="sec" type="button" id="selall" style="display:none" onclick="selAll()">Select all</button>
+<button type="button" id="dlsel" style="display:none" onclick="dlSelected()">Download selected</button></span>
+<span class="mut" id="selinfo"></span></div>{% else %}<p class="mut">No photos yet. Check back soon.</p>{% endif %}
+
+{% set multi_day = (items|map(attribute="day")|unique|list|length) > 1 %}
+<div id="grid">{% for it in items %}
+{% if loop.first or items[loop.index0-1].day != it.day %}{% if not loop.first %}</div>{% endif %}
+{% if multi_day %}<div class="day row"><h2 style="margin:0">{{ it.dayLabel }}</h2><a href="#" class="selday mut" data-day="{{ it.day }}">Select day</a></div>{% endif %}
+<div class="grid">{% endif %}
+<div class="it {% if it.video %}vid{% endif %}" data-i="{{ loop.index0 }}" data-day="{{ it.day }}">
+{% if it.video %}<video src="/e/{{ token }}/file/{{ it.name|q }}#t=0.1" preload="metadata" muted playsinline></video>
+{% else %}<img loading="lazy" src="/e/{{ token }}/thumb/{{ it.name|q }}" alt="">{% endif %}<span class="chk"></span><span class="tm">{{ it.time }}</span>
+</div>{% if loop.last %}</div>{% endif %}{% endfor %}</div>
+<form method="post" action="/e/{{ token }}/download.zip" id="selform"></form>
+
+{% if ev.guest_upload %}<h2>Add your photos</h2>
+{% set upload_url = "/e/" ~ token ~ "/upload" %}{% set chunk_size = 52428800 %}{% include "_uploader.html" %}{% endif %}
+
+<div id="lb"><div class="top"><span id="cap" class="mut"></span>
+<span class="row"><a id="dl" class="btn">⬇ Download</a><button class="sec" onclick="closeLb()">✕</button></span></div>
+<button class="nav" id="prev" onclick="step(-1)">‹</button><div id="media"></div><button class="nav" id="next" onclick="step(1)">›</button></div>
+<script>
+const items = {{ items|tojson }}, tok = {{ token|tojson }}, enc = n => encodeURIComponent(n);
+let cur = 0, selecting = false; const lb = document.getElementById('lb'), m = document.getElementById('media'), grid = document.getElementById('grid');
+function show(){
+  const it = items[cur], n = enc(it.name);
+  m.innerHTML = it.video ? `<video src="/e/${tok}/file/${n}" controls autoplay playsinline></video>` : `<img src="/e/${tok}/preview/${n}">`;
+  document.getElementById('dl').href = `/e/${tok}/file/${n}?dl=1`;
+  document.getElementById('cap').textContent = `${it.when}  ·  ${cur+1} / ${items.length}`;
+  for (const d of [1, -1]) { const nb = items[(cur + d + items.length) % items.length]; if (!nb.video) new Image().src = `/e/${tok}/preview/${enc(nb.name)}`; }
+}
+function openLb(i){ cur = i; show(); lb.classList.add('on'); document.body.style.overflow = 'hidden'; }
+function closeLb(){ lb.classList.remove('on'); m.innerHTML = ''; document.body.style.overflow = ''; }
+function step(d){ cur = (cur + d + items.length) % items.length; show(); }
+document.onkeydown = e => { if (!lb.classList.contains('on')) return;
+  if (e.key === 'Escape') closeLb(); if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1); };
+let sx = null; lb.ontouchstart = e => sx = e.touches[0].clientX;
+lb.ontouchend = e => { if (sx === null) return; const dx = e.changedTouches[0].clientX - sx; if (Math.abs(dx) > 50) step(dx < 0 ? 1 : -1); sx = null; };
+grid.addEventListener('click', e => {
+  const sd = e.target.closest('.selday');
+  if (sd) { e.preventDefault(); if (!selecting) toggleSelect();
+    const tiles = [...grid.querySelectorAll(`.it[data-day="${sd.dataset.day}"]`)], all = tiles.every(t => t.classList.contains('sel'));
+    tiles.forEach(t => t.classList.toggle('sel', !all)); upd(); return; }
+  const it = e.target.closest('.it'); if (!it) return;
+  if (selecting) { it.classList.toggle('sel'); upd(); } else openLb(+it.dataset.i); });
+function toggleSelect(){ selecting = !selecting; grid.classList.toggle('selecting', selecting);
+  document.getElementById('selbtn').textContent = selecting ? 'Cancel' : 'Select';
+  if (!selecting) grid.querySelectorAll('.sel').forEach(e => e.classList.remove('sel')); upd(); }
+function selAll(){ const t = [...grid.querySelectorAll('.it')], all = t.every(x => x.classList.contains('sel')); t.forEach(x => x.classList.toggle('sel', !all)); upd(); }
+function upd(){ const n = grid.querySelectorAll('.sel').length, b = document.getElementById('dlsel');
+  document.getElementById('selall').style.display = selecting ? '' : 'none';
+  b.style.display = n ? '' : 'none'; b.textContent = `⬇ Download ${n} selected`;
+  document.getElementById('selinfo').textContent = selecting ? (n ? '' : 'Tap photos to pick them') : ''; }
+function dlSelected(){ const f = document.getElementById('selform'); f.innerHTML = '';
+  grid.querySelectorAll('.sel').forEach(it => { const i = document.createElement('input'); i.type = 'hidden'; i.name = 'names'; i.value = items[+it.dataset.i].name; f.appendChild(i); });
+  f.submit(); }
+</script>
+{% endblock %}

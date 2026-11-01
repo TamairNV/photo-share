@@ -1,0 +1,16 @@
+services:
+  gallery:
+    build: .
+    container_name: event-gallery
+    restart: unless-stopped
+    # Only reachable from the server itself; the Cloudflare tunnel connects to it.
+    ports:
+      - "127.0.0.1:8100:8000"
+    # Run as your user so files from the web uploader and from rsync share an owner.
+    user: "${PUID:-1000}:${PGID:-1000}"
+    env_file: .env
+    environment:
+      - TZ=${TZ:-Europe/London}
+    volumes:
+      # Each event is a plain subfolder inside <PHOTOS_PATH>/events/
+      - ${PHOTOS_PATH:-./data}:/data

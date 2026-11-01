@@ -1,0 +1,50 @@
+<div class="card" id="drop" style="border:2px dashed #333;text-align:center;padding:26px">
+<p style="margin:0">Drag photos here or <label style="color:var(--acc);cursor:pointer">pick files<input id="pick" type="file" multiple accept="image/*,video/*,.heic,.heif" hidden></label></p>
+<div id="upwrap" style="display:none;text-align:left;margin-top:12px"><div id="status" class="mut"></div><div class="bar"><div id="prog"></div></div></div>
+</div>
+<script>
+(() => {
+const URL_ = {{ upload_url|tojson }}, CSRF = {{ csrf|tojson }}, CHUNK = {{ chunk_size }}, PAR = 3;
+const st = document.getElementById('status'), pr = document.getElementById('prog'), wrap = document.getElementById('upwrap');
+function post(fd, onp){ return new Promise((res, rej) => {
+  const x = new XMLHttpRequest(); x.open('POST', URL_);
+  x.upload.onprogress = e => onp(e.loaded);
+  x.onload = () => x.status < 300 ? res(JSON.parse(x.responseText)) : rej(new Error(x.status));
+  x.onerror = () => rej(new Error('network')); x.send(fd); }); }
+async function sendFile(f, tick){
+  const id = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now()).replace(/[^a-z0-9]/gi, '');
+  let off = 0, tries = 0;
+  while (true){
+    const piece = f.slice(off, off + CHUNK), fd = new FormData();
+    fd.append('csrf', CSRF); fd.append('upload_id', id); fd.append('filename', f.name);
+    fd.append('offset', off); fd.append('total', f.size); fd.append('chunk', piece, 'chunk');
+    try {
+      const r = await post(fd, n => tick(off + n));
+      if (r.status === 'done') { tick(f.size); return; }
+      off = r.offset; tries = 0;
+    } catch (e) { if (++tries > 4) throw e; await new Promise(r => setTimeout(r, 1500 * tries)); }
+  }
+}
+async function send(list){
+  const files = [...list]; if (!files.length) return;
+  wrap.style.display = 'block';
+  const total = files.reduce((a, f) => a + f.size, 0) || 1, done = new Array(files.length).fill(0);
+  let next = 0, ok = 0, bad = 0;
+  const draw = () => { const sent = done.reduce((a, b) => a + b, 0);
+    pr.style.width = (100 * sent / total).toFixed(1) + '%';
+    st.textContent = `Uploading ${ok + bad} of ${files.length} done · ${(sent/1048576).toFixed(0)} / ${(total/1048576).toFixed(0)} MB` + (bad ? ` · ${bad} failed` : ''); };
+  async function worker(){ while (next < files.length){ const i = next++;
+    try { await sendFile(files[i], n => { done[i] = n; draw(); }); ok++; } catch (e) { bad++; } draw(); } }
+  window.onbeforeunload = () => 'Uploads still running';
+  await Promise.all(Array.from({length: PAR}, worker));
+  window.onbeforeunload = null;
+  st.innerHTML = `<span class="ok">✓ ${ok} uploaded</span>` + (bad ? ` · <span style="color:var(--bad)">${bad} failed</span>` : '');
+  setTimeout(() => location.reload(), 900);
+}
+document.getElementById('pick').onchange = e => send(e.target.files);
+const d = document.getElementById('drop');
+d.ondragover = e => { e.preventDefault(); d.style.borderColor = 'var(--acc)'; };
+d.ondragleave = () => d.style.borderColor = '#333';
+d.ondrop = e => { e.preventDefault(); d.style.borderColor = '#333'; send(e.dataTransfer.files); };
+})();
+</script>
