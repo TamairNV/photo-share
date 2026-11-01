@@ -4,6 +4,8 @@ from datetime import datetime, date
 from pathlib import Path
 from urllib.parse import quote
 
+import anyio
+import mimetypes
 import jwt
 import segno
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
@@ -17,6 +19,9 @@ try:
     register_heif_opener()
 except Exception:
     pass
+
+for _t, _e in (("image/heic", ".heic"), ("image/heif", ".heif"), ("video/quicktime", ".mov"), ("video/mp4", ".m4v"), ("image/webp", ".webp")):
+    mimetypes.add_type(_t, _e)
 
 DATA = Path(os.environ.get("DATA_DIR", "/data"))
 EVENTS_DIR = DATA / "events"          # one plain folder per event, on your drive
@@ -53,7 +58,7 @@ for d in (EVENTS_DIR, CACHE_DIR, UPLOADS_TMP):
 
 _lock = threading.RLock()  # re-entrant: helpers like sync_folders() also take it
 _meta_lock = threading.Lock()
-_pool = ThreadPoolExecutor(max_workers=2)
+_pool = ThreadPoolExecutor(max_workers=2)  # thumbnail builder, kept small so uploads keep the CPU/disk
 _fails: dict[str, list[float]] = {}
 
 DEFAULTS = {"public": True, "password": "", "expires": "", "cover": "", "description": "",
@@ -336,11 +341,24 @@ def find_uploader(utoken):
     raise HTTPException(404, "Upload link not found or turned off")
 
 
-def receive_chunk(slug, upload_id, filename, offset, total, chunk, uploader_id=""):
-    """Append one piece of a file. Every upload goes through here; small files are just one piece."""
+async def receive_chunk(request, slug, uploader_id=""):
+    """Append one piece of a file, streamed straight from the request body to disk.
+
+    The body is the raw bytes (no multipart), so there is no parsing and no temp spool copy.
+    Params come in the query string; small files are a single piece, big ones arrive in
+    50MB pieces to stay under Cloudflare's 100MB request limit.
+    """
+    q = request.query_params
+    if not secrets.compare_digest(request.headers.get("x-csrf-token", ""), request.session.get("csrf", "") or "-"):
+        raise HTTPException(403, "bad csrf token")
+    upload_id = q.get("upload_id", "")
     if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", upload_id):
         raise HTTPException(400, "bad upload id")
-    name = safe_name(filename)
+    try:
+        offset, total = int(q.get("offset", "")), int(q.get("total", ""))
+    except ValueError:
+        raise HTTPException(400, "bad offset/total")
+    name = safe_name(q.get("filename"))
     if Path(name).suffix.lower() not in MEDIA_EXT:
         raise HTTPException(415, "not a photo or video")
     tmp = UPLOADS_TMP / f"{slug}--{upload_id}"
@@ -349,19 +367,32 @@ def receive_chunk(slug, upload_id, filename, offset, total, chunk, uploader_id="
         have = 0
     elif offset != have:
         return {"status": "resume", "offset": have}  # client resends from here
-    with open(tmp, "wb" if offset == 0 else "ab") as out:
-        shutil.copyfileobj(chunk, out, 1 << 20)
+    out = await anyio.to_thread.run_sync(open, tmp, "wb" if offset == 0 else "ab")
+    try:
+        buf = bytearray()
+        async for part in request.stream():
+            buf += part
+            if len(buf) >= 4 << 20:
+                await anyio.to_thread.run_sync(out.write, bytes(buf)); buf.clear()
+        if buf:
+            await anyio.to_thread.run_sync(out.write, bytes(buf))
+    finally:
+        await anyio.to_thread.run_sync(out.close)
     have = tmp.stat().st_size
     if have < total:
         return {"status": "partial", "offset": have}
+    return await anyio.to_thread.run_sync(finish_upload, slug, tmp, name, uploader_id)
+
+
+def finish_upload(slug, tmp, name, uploader_id):
     dest = EVENTS_DIR / slug / name
     stem, ext, i = dest.stem, dest.suffix, 1
     while dest.exists():
         dest = EVENTS_DIR / slug / f"{stem}_{i}{ext}"; i += 1
-    shutil.move(str(tmp), dest)
+    shutil.move(str(tmp), dest)  # same drive, so this is an instant rename
     if uploader_id:
         set_source(slug, dest.name, uploader_id)
-    _pool.submit(pregenerate, slug, dest.name)
+    _pool.submit(pregenerate, slug, dest.name)  # thumbnails are built in the background
     return {"status": "done", "saved": dest.name}
 
 
@@ -626,11 +657,9 @@ def uploader_page(request: Request, utoken: str):
 
 
 @app.post("/u/{utoken}/upload")
-def uploader_upload(request: Request, utoken: str, chunk: UploadFile = File(...), upload_id: str = Form(...),
-                    filename: str = Form(...), offset: int = Form(...), total: int = Form(...), csrf: str = Form("")):
-    slug, ev, uid, u = find_uploader(utoken)
-    check_csrf(request, csrf)
-    return receive_chunk(slug, upload_id, filename, offset, total, chunk.file, uploader_id=uid)
+async def uploader_upload(request: Request, utoken: str):
+    slug, ev, uid, u = await anyio.to_thread.run_sync(find_uploader, utoken)
+    return await receive_chunk(request, slug, uploader_id=uid)
 
 
 # ---------- admin ----------
@@ -729,11 +758,10 @@ def admin_event(request: Request, slug: str):
 
 
 @app.post("/admin/events/{slug}/upload")
-def upload(request: Request, slug: str, chunk: UploadFile = File(...), upload_id: str = Form(...),
-           filename: str = Form(...), offset: int = Form(...), total: int = Form(...), csrf: str = Form("")):
-    require_admin(request); check_csrf(request, csrf)
-    get_event(slug)
-    return receive_chunk(slug, upload_id, filename, offset, total, chunk.file)
+async def upload(request: Request, slug: str):
+    await anyio.to_thread.run_sync(require_admin, request)
+    await anyio.to_thread.run_sync(get_event, slug)
+    return await receive_chunk(request, slug)
 
 
 @app.post("/admin/events/{slug}/rescan")

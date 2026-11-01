@@ -1,48 +1,86 @@
 <div class="card" id="drop" style="border:2px dashed #333;text-align:center;padding:26px">
-<p style="margin:0">Drag photos here or <label style="color:var(--acc);cursor:pointer">pick files<input id="pick" type="file" multiple accept="image/*,video/*,.heic,.heif" hidden></label></p>
-<div id="upwrap" style="display:none;text-align:left;margin-top:12px"><div id="status" class="mut"></div><div class="bar"><div id="prog"></div></div></div>
+<p style="margin:0">Drag photos here or <label style="color:var(--acc);cursor:pointer">pick files<input id="pick" type="file" multiple hidden></label></p>
+<div id="upwrap" style="display:none;text-align:left;margin-top:12px">
+<div class="row" style="justify-content:space-between"><b id="status"></b><span class="mut" id="speed"></span></div>
+<div class="bar"><div id="prog"></div></div>
+<div id="files" style="margin-top:10px;max-height:220px;overflow:auto;font-size:13px"></div></div>
 </div>
+<style>
+.uf{display:grid;grid-template-columns:1fr 90px 54px;gap:8px;align-items:center;padding:3px 0}
+.uf .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.uf .bar{margin:0;height:4px}
+.uf.ok .pc{color:#46a758}.uf.bad .pc{color:var(--bad)}
+</style>
 <script>
 (() => {
-const URL_ = {{ upload_url|tojson }}, CSRF = {{ csrf|tojson }}, CHUNK = {{ chunk_size }}, PAR = 3;
-const st = document.getElementById('status'), pr = document.getElementById('prog'), wrap = document.getElementById('upwrap');
-function post(fd, onp){ return new Promise((res, rej) => {
-  const x = new XMLHttpRequest(); x.open('POST', URL_);
+const URL_ = {{ upload_url|tojson }}, CSRF = {{ csrf|tojson }}, CHUNK = {{ chunk_size }}, PAR = 5;
+const $ = id => document.getElementById(id), wrap = $('upwrap'), list = $('files');
+const mb = n => (n / 1048576).toFixed(n < 10485760 ? 1 : 0);
+const dur = s => !isFinite(s) ? '' : s < 60 ? `${Math.ceil(s)}s` : s < 3600 ? `${Math.floor(s / 60)}m ${Math.ceil(s % 60)}s` : `${Math.floor(s / 3600)}h ${Math.ceil(s % 3600 / 60)}m`;
+const esc = s => s.replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+function put(blob, q, onp){ return new Promise((res, rej) => {
+  // raw bytes in the body (no multipart form) so the server can stream it straight to disk
+  const x = new XMLHttpRequest(); x.open('POST', URL_ + '?' + new URLSearchParams(q));
+  x.setRequestHeader('x-csrf-token', CSRF); x.setRequestHeader('content-type', 'application/octet-stream');
   x.upload.onprogress = e => onp(e.loaded);
   x.onload = () => x.status < 300 ? res(JSON.parse(x.responseText)) : rej(new Error(x.status));
-  x.onerror = () => rej(new Error('network')); x.send(fd); }); }
+  x.onerror = () => rej(new Error('network')); x.send(blob); }); }
 async function sendFile(f, tick){
   const id = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now()).replace(/[^a-z0-9]/gi, '');
   let off = 0, tries = 0;
   while (true){
-    const piece = f.slice(off, off + CHUNK), fd = new FormData();
-    fd.append('csrf', CSRF); fd.append('upload_id', id); fd.append('filename', f.name);
-    fd.append('offset', off); fd.append('total', f.size); fd.append('chunk', piece, 'chunk');
     try {
-      const r = await post(fd, n => tick(off + n));
+      const r = await put(f.slice(off, off + CHUNK), {upload_id: id, filename: f.name, offset: off, total: f.size}, n => tick(off + n));
       if (r.status === 'done') { tick(f.size); return; }
       off = r.offset; tries = 0;
-    } catch (e) { if (++tries > 4) throw e; await new Promise(r => setTimeout(r, 1500 * tries)); }
+    } catch (e) {
+      // network drop / 502 / 503 / restart: wait and retry; the server tells us where to resume from
+      if (['403', '404', '413', '415'].includes(e.message) || ++tries > 10) throw e;
+      tick(off); await new Promise(r => setTimeout(r, Math.min(2000 * tries, 20000)));
+    }
   }
 }
-async function send(list){
-  const files = [...list]; if (!files.length) return;
-  wrap.style.display = 'block';
-  const total = files.reduce((a, f) => a + f.size, 0) || 1, done = new Array(files.length).fill(0);
-  let next = 0, ok = 0, bad = 0;
-  const draw = () => { const sent = done.reduce((a, b) => a + b, 0);
-    pr.style.width = (100 * sent / total).toFixed(1) + '%';
-    st.textContent = `Uploading ${ok + bad} of ${files.length} done · ${(sent/1048576).toFixed(0)} / ${(total/1048576).toFixed(0)} MB` + (bad ? ` · ${bad} failed` : ''); };
+async function send(fl){
+  const files = [...fl]; if (!files.length) return;
+  wrap.style.display = 'block'; list.innerHTML = '';
+  const rows = files.map(f => { const d = document.createElement('div'); d.className = 'uf';
+    d.innerHTML = `<span class="nm">${esc(f.name)} <span class="mut">${mb(f.size)} MB</span></span><div class="bar"><div></div></div><span class="pc mut">waiting</span>`;
+    list.appendChild(d); return d; });
+  const total = files.reduce((a, f) => a + f.size, 0) || 1, done = new Array(files.length).fill(0), t0 = performance.now();
+  let next = 0, ok = 0, bad = 0, last = 0, samples = [];
+  const draw = () => {
+    const now = performance.now(); if (now - last < 150 && ok + bad < files.length) return; last = now;
+    const sent = done.reduce((a, b) => a + b, 0);
+    samples.push([now, sent]); while (samples.length > 2 && now - samples[0][0] > 8000) samples.shift();   // speed over the last ~8s
+    const [ta, sa] = samples[0], rate = now - ta > 500 ? (sent - sa) / ((now - ta) / 1000) : sent / Math.max((now - t0) / 1000, .001);
+    $('prog').style.width = (100 * sent / total).toFixed(1) + '%';
+    $('status').textContent = `${ok + bad} of ${files.length} done · ${mb(sent)} / ${mb(total)} MB`;
+    $('speed').textContent = rate > 0 && sent < total ? `${(rate / 1048576).toFixed(1)} MB/s · ${dur((total - sent) / rate)} left` : '';
+  };
+  const setRow = (i, n) => { done[i] = n; const r = rows[i], f = files[i];
+    r.querySelector('.bar>div').style.width = (100 * n / (f.size || 1)) + '%'; r.querySelector('.pc').textContent = Math.floor(100 * n / (f.size || 1)) + '%'; draw(); };
   async function worker(){ while (next < files.length){ const i = next++;
-    try { await sendFile(files[i], n => { done[i] = n; draw(); }); ok++; } catch (e) { bad++; } draw(); } }
+    rows[i].querySelector('.pc').textContent = '0%';
+    try { await sendFile(files[i], n => setRow(i, n)); ok++; rows[i].classList.add('ok'); rows[i].querySelector('.pc').textContent = '✓'; }
+    catch (e) { bad++; rows[i].classList.add('bad'); rows[i].querySelector('.pc').textContent = 'failed'; }
+    last = 0; draw(); } }
   window.onbeforeunload = () => 'Uploads still running';
   await Promise.all(Array.from({length: PAR}, worker));
   window.onbeforeunload = null;
-  st.innerHTML = `<span class="ok">✓ ${ok} uploaded</span>` + (bad ? ` · <span style="color:var(--bad)">${bad} failed</span>` : '');
-  setTimeout(() => { if (window.refreshLive) { refreshLive(); wrap.style.display = 'none'; } else { sessionStorage.keepY = scrollY; location.reload(); } }, 700);
+  const secs = (performance.now() - t0) / 1000;
+  $('status').innerHTML = `<span class="ok">✓ ${ok} uploaded</span>` + (bad ? ` · <span style="color:var(--bad)">${bad} failed</span>` : '');
+  $('speed').textContent = `${mb(total)} MB in ${dur(secs)} (${(total / 1048576 / secs).toFixed(1)} MB/s)`;
+  if (window.toast) toast(`✓ ${ok} uploaded` + (bad ? `, ${bad} failed` : ''), !!bad);
+  setTimeout(() => { if (window.refreshLive) refreshLive(); else { sessionStorage.keepY = scrollY; location.reload(); } }, 900);
 }
-document.getElementById('pick').onchange = e => send(e.target.files);
-const d = document.getElementById('drop');
+// Phones can take a while to hand files over after you pick them (iCloud downloads, video export),
+// so show something the moment the picker opens, and hide it again if nothing gets picked.
+const pick = $('pick');
+pick.addEventListener('click', () => { wrap.style.display = 'block'; list.innerHTML = ''; $('prog').style.width = '0';
+  $('status').textContent = 'Getting your files ready…'; $('speed').textContent = 'this can take a moment on phones'; });
+pick.addEventListener('cancel', () => { wrap.style.display = 'none'; });
+addEventListener('focus', () => setTimeout(() => { if (!pick.files.length && $('status').textContent.startsWith('Getting')) wrap.style.display = 'none'; }, 1500));
+pick.onchange = e => { $('status').textContent = `Preparing ${e.target.files.length} files…`; send(e.target.files); e.target.value = ''; };
+const d = $('drop');
 d.ondragover = e => { e.preventDefault(); d.style.borderColor = 'var(--acc)'; };
 d.ondragleave = () => d.style.borderColor = '#333';
 d.ondrop = e => { e.preventDefault(); d.style.borderColor = '#333'; send(e.dataTransfer.files); };
