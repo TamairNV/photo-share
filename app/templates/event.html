@@ -23,6 +23,10 @@
 {% if ev.description %}<p style="margin:8px 0 0;white-space:pre-line">{{ ev.description }}</p>{% endif %}
 </div></div>
 
+{% if uploader %}<div class="card" style="margin-bottom:16px;border-left:5px solid {{ uploader.colour }}">
+<b>Hi {{ uploader.name }}!</b> <span class="mut">This is your upload link. Anything you add here shows up in the album with your colour. Please don't share this link.</span>
+<div style="margin-top:12px">{% set upload_url = "/u/" ~ uploader.utoken ~ "/upload" %}{% include "_uploader.html" %}</div></div>{% endif %}
+{% include "_legend.html" %}
 {% if items %}<div class="tools row" style="justify-content:space-between">
 <span class="row"><a class="btn" href="/e/{{ token }}/download.zip" id="allbtn">⬇ Download all</a>
 <button class="sec" type="button" id="selbtn" onclick="toggleSelect()">Select</button>
@@ -35,31 +39,33 @@
 {% if loop.first or items[loop.index0-1].day != it.day %}{% if not loop.first %}</div>{% endif %}
 {% if multi_day %}<div class="day row"><h2 style="margin:0">{{ it.dayLabel }}</h2><a href="#" class="selday mut" data-day="{{ it.day }}">Select day</a></div>{% endif %}
 <div class="grid">{% endif %}
-<div class="it {% if it.video %}vid{% endif %}" data-i="{{ loop.index0 }}" data-day="{{ it.day }}">
+<div class="it {% if it.video %}vid{% endif %}" data-i="{{ loop.index0 }}" data-day="{{ it.day }}" data-by="{{ it.by }}">
+{% if it.by and ev.uploaders.get(it.by) %}<span class="byb" style="--c:{{ ev.uploaders[it.by].colour }}" title="{{ ev.uploaders[it.by].name }}"></span>{% endif %}
 {% if it.video %}<video src="/e/{{ token }}/file/{{ it.name|q }}#t=0.1" preload="metadata" muted playsinline></video>
 {% else %}<img loading="lazy" src="/e/{{ token }}/thumb/{{ it.name|q }}" alt="">{% endif %}<span class="chk"></span><span class="tm">{{ it.time }}</span>
 </div>{% if loop.last %}</div>{% endif %}{% endfor %}</div>
 <form method="post" action="/e/{{ token }}/download.zip" id="selform"></form>
 
-{% if ev.guest_upload %}<h2>Add your photos</h2>
-{% set upload_url = "/e/" ~ token ~ "/upload" %}{% set chunk_size = 52428800 %}{% include "_uploader.html" %}{% endif %}
+
 
 <div id="lb"><div class="top"><span id="cap" class="mut"></span>
 <span class="row"><a id="dl" class="btn">⬇ Download</a><button class="sec" onclick="closeLb()">✕</button></span></div>
 <button class="nav" id="prev" onclick="step(-1)">‹</button><div id="media"></div><button class="nav" id="next" onclick="step(1)">›</button></div>
 <script>
 const items = {{ items|tojson }}, tok = {{ token|tojson }}, enc = n => encodeURIComponent(n);
+const who = Object.fromEntries(({{ (legend or [])|tojson }}).map(l => [l.id, l.name]));
 let cur = 0, selecting = false; const lb = document.getElementById('lb'), m = document.getElementById('media'), grid = document.getElementById('grid');
 function show(){
   const it = items[cur], n = enc(it.name);
   m.innerHTML = it.video ? `<video src="/e/${tok}/file/${n}" controls autoplay playsinline></video>` : `<img src="/e/${tok}/preview/${n}">`;
   document.getElementById('dl').href = `/e/${tok}/file/${n}?dl=1`;
-  document.getElementById('cap').textContent = `${it.when}  ·  ${cur+1} / ${items.length}`;
+  document.getElementById('cap').textContent = `${it.when}` + (it.by && who[it.by] ? `  ·  by ${who[it.by]}` : '') + `  ·  ${cur+1} / ${items.length}`;
   for (const d of [1, -1]) { const nb = items[(cur + d + items.length) % items.length]; if (!nb.video) new Image().src = `/e/${tok}/preview/${enc(nb.name)}`; }
 }
 function openLb(i){ cur = i; show(); lb.classList.add('on'); document.body.style.overflow = 'hidden'; }
 function closeLb(){ lb.classList.remove('on'); m.innerHTML = ''; document.body.style.overflow = ''; }
-function step(d){ cur = (cur + d + items.length) % items.length; show(); }
+function step(d){ for (let k = 0; k < items.length; k++) { cur = (cur + d + items.length) % items.length;
+  if (!grid.querySelector(`.it[data-i="${cur}"]`).classList.contains('hid')) break; } show(); }
 document.onkeydown = e => { if (!lb.classList.contains('on')) return;
   if (e.key === 'Escape') closeLb(); if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1); };
 let sx = null; lb.ontouchstart = e => sx = e.touches[0].clientX;
@@ -67,14 +73,14 @@ lb.ontouchend = e => { if (sx === null) return; const dx = e.changedTouches[0].c
 grid.addEventListener('click', e => {
   const sd = e.target.closest('.selday');
   if (sd) { e.preventDefault(); if (!selecting) toggleSelect();
-    const tiles = [...grid.querySelectorAll(`.it[data-day="${sd.dataset.day}"]`)], all = tiles.every(t => t.classList.contains('sel'));
+    const tiles = [...grid.querySelectorAll(`.it[data-day="${sd.dataset.day}"]:not(.hid)`)], all = tiles.every(t => t.classList.contains('sel'));
     tiles.forEach(t => t.classList.toggle('sel', !all)); upd(); return; }
   const it = e.target.closest('.it'); if (!it) return;
   if (selecting) { it.classList.toggle('sel'); upd(); } else openLb(+it.dataset.i); });
 function toggleSelect(){ selecting = !selecting; grid.classList.toggle('selecting', selecting);
   document.getElementById('selbtn').textContent = selecting ? 'Cancel' : 'Select';
   if (!selecting) grid.querySelectorAll('.sel').forEach(e => e.classList.remove('sel')); upd(); }
-function selAll(){ const t = [...grid.querySelectorAll('.it')], all = t.every(x => x.classList.contains('sel')); t.forEach(x => x.classList.toggle('sel', !all)); upd(); }
+function selAll(){ const t = [...grid.querySelectorAll('.it:not(.hid)')], all = t.every(x => x.classList.contains('sel')); t.forEach(x => x.classList.toggle('sel', !all)); upd(); }
 function upd(){ const n = grid.querySelectorAll('.sel').length, b = document.getElementById('dlsel');
   document.getElementById('selall').style.display = selecting ? '' : 'none';
   b.style.display = n ? '' : 'none'; b.textContent = `⬇ Download ${n} selected`;

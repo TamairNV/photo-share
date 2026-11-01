@@ -25,6 +25,8 @@ DB_FILE = DATA / "events.json"
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 BASE_URL = os.environ.get("BASE_URL", "").rstrip("/")
 SITE_NAME = os.environ.get("SITE_NAME", "Photos")
+OWNER_NAME = os.environ.get("OWNER_NAME", "Owner")  # label for photos you add yourself (admin upload, rsync)
+UPLOADER_COLOURS = ["#ff6b6b", "#4dabf7", "#51cf66", "#fcc419", "#cc5de8", "#ff922b", "#22b8cf", "#f06595", "#94d82d", "#845ef7"]
 SECRET = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 HOST_PHOTOS_PATH = os.environ.get("PHOTOS_PATH") or str(DATA)
 SSH_TARGET = os.environ.get("SSH_TARGET", "")
@@ -55,7 +57,7 @@ _pool = ThreadPoolExecutor(max_workers=2)
 _fails: dict[str, list[float]] = {}
 
 DEFAULTS = {"public": True, "password": "", "expires": "", "cover": "", "description": "",
-            "date": "", "guest_upload": False, "sort": "taken", "views": 0, "downloads": 0}
+            "date": "", "uploaders": {}, "sort": "taken", "views": 0, "downloads": 0}
 
 
 # ---------- storage ----------
@@ -244,11 +246,13 @@ def media_files(slug, sort="taken"):
         if dirty or len(fresh) != len(meta):
             mfile.parent.mkdir(parents=True, exist_ok=True)
             mfile.write_text(json.dumps(fresh))
+    sources = load_sources(slug)
     items = []
     for name, p in files.items():
         m = fresh[name]
         items.append({"name": name, "path": p, "video": p.suffix.lower() in VID_EXT, "size": m["size"],
-                      "mtime": m["mtime"], "taken": m["taken"] or m["mtime"], "exact": bool(m["taken"])})
+                      "mtime": m["mtime"], "taken": m["taken"] or m["mtime"], "exact": bool(m["taken"]),
+                      "by": sources.get(name, "")})
     key = {"taken": lambda i: (i["taken"], i["name"]), "uploaded": lambda i: (i["mtime"], i["name"]),
            "name": lambda i: i["name"].lower()}.get(sort, lambda i: i["taken"])
     return sorted(items, key=key)
@@ -285,7 +289,54 @@ def drop_cache(slug, name):
         cache_path(slug, size, name).unlink(missing_ok=True)
 
 
-def receive_chunk(slug, upload_id, filename, offset, total, chunk):
+# ---------- who uploaded what ----------
+SOURCES_DIR = DATA / ".sources"
+SOURCES_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def load_sources(slug):
+    try:
+        return json.loads((SOURCES_DIR / f"{slug}.json").read_text())
+    except Exception:
+        return {}
+
+
+def set_source(slug, name, uploader_id):
+    with _lock:
+        src = load_sources(slug)
+        if uploader_id:
+            src[name] = uploader_id
+        else:
+            src.pop(name, None)
+        tmp = SOURCES_DIR / f".{slug}.tmp"
+        tmp.write_text(json.dumps(src))
+        tmp.replace(SOURCES_DIR / f"{slug}.json")
+
+
+def uploader_legend(ev, items):
+    """[{id, name, colour, count}] for everyone who has photos here (plus active uploaders)."""
+    counts = {}
+    for i in items:
+        counts[i["by"]] = counts.get(i["by"], 0) + 1
+    out = []
+    if counts.get(""):
+        out.append({"id": "", "name": OWNER_NAME, "colour": "#9a9aa0", "count": counts[""]})
+    for uid, u in ev.get("uploaders", {}).items():
+        if counts.get(uid) or not u.get("revoked"):
+            out.append({"id": uid, "name": u["name"], "colour": u["colour"], "count": counts.get(uid, 0)})
+    return out
+
+
+def find_uploader(utoken):
+    db = sync_folders()
+    for slug, ev in db["events"].items():
+        for uid, u in ev.get("uploaders", {}).items():
+            if not u.get("revoked") and secrets.compare_digest(u["token"], utoken):
+                return slug, ev, uid, u
+    raise HTTPException(404, "Upload link not found or turned off")
+
+
+def receive_chunk(slug, upload_id, filename, offset, total, chunk, uploader_id=""):
     """Append one piece of a file. Every upload goes through here; small files are just one piece."""
     if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", upload_id):
         raise HTTPException(400, "bad upload id")
@@ -308,6 +359,8 @@ def receive_chunk(slug, upload_id, filename, offset, total, chunk):
     while dest.exists():
         dest = EVENTS_DIR / slug / f"{stem}_{i}{ext}"; i += 1
     shutil.move(str(tmp), dest)
+    if uploader_id:
+        set_source(slug, dest.name, uploader_id)
     _pool.submit(pregenerate, slug, dest.name)
     return {"status": "done", "saved": dest.name}
 
@@ -449,10 +502,28 @@ def unlocked(request, ev):
     return not ev.get("password") or request.session.get("unlock:" + ev["token"]) == ev["password"][:16]
 
 
+def has_uploader_access(request, ev):
+    uid = request.session.get("up:" + ev["token"])
+    u = ev.get("uploaders", {}).get(uid) if uid else None
+    return bool(u and not u.get("revoked"))
+
+
+def gallery_items(slug, ev):
+    items = []
+    for i in media_files(slug, ev["sort"]):
+        t = datetime.fromtimestamp(i["taken"])
+        items.append({"name": i["name"], "video": i["video"], "by": i["by"], "day": t.strftime("%Y-%m-%d"),
+                      "dayLabel": t.strftime("%A %-d %B %Y"), "time": t.strftime("%H:%M"),
+                      "when": t.strftime("%-d %b %Y, %H:%M")})
+    cover = ev["cover"] if any(i["name"] == ev["cover"] and not i["video"] for i in items) else \
+        next((i["name"] for i in items if not i["video"]), "")
+    return items, cover
+
+
 def guest_event(request, token):
     """For file/zip endpoints: event must be live and unlocked (admins always get in)."""
     slug, ev = find_event(token)
-    if request.session.get("admin"):
+    if request.session.get("admin") or has_uploader_access(request, ev):
         return slug, ev
     if not ev["public"] or expired(ev):
         raise HTTPException(404)
@@ -479,16 +550,9 @@ def event_page(request: Request, token: str):
     if not is_admin and token not in seen:
         request.session["seen"] = (seen + [token])[-50:]
         bump(slug, "views")
-    items = []
-    for i in media_files(slug, ev["sort"]):
-        t = datetime.fromtimestamp(i["taken"])
-        items.append({"name": i["name"], "video": i["video"], "day": t.strftime("%Y-%m-%d"),
-                      "dayLabel": t.strftime("%A %-d %B %Y"), "time": t.strftime("%H:%M"),
-                      "when": t.strftime("%-d %b %Y, %H:%M")})
-    cover = ev["cover"] if any(i["name"] == ev["cover"] and not i["video"] for i in items) else \
-        next((i["name"] for i in items if not i["video"]), "")
+    items, cover = gallery_items(slug, ev)
     return templates.TemplateResponse(request, "event.html", ctx(
-        request, ev=ev, token=token, items=items, cover=cover))
+        request, ev=ev, token=token, items=items, cover=cover, legend=uploader_legend(ev, items), uploader=None))
 
 
 @app.post("/e/{token}/unlock", response_class=HTMLResponse)
@@ -543,14 +607,23 @@ def download_selected(request: Request, token: str, names: list[str] = Form(...)
     return zip_response(files, slugify(ev["name"]) + f"-{len(files)}-photos.zip")
 
 
-@app.post("/e/{token}/upload")
-def guest_upload(request: Request, token: str, chunk: UploadFile = File(...), upload_id: str = Form(...),
-                 filename: str = Form(...), offset: int = Form(...), total: int = Form(...), csrf: str = Form("")):
-    slug, ev = guest_event(request, token)
+@app.get("/u/{utoken}", response_class=HTMLResponse)
+def uploader_page(request: Request, utoken: str):
+    """Secret upload link for one named person. Works even if the public link is off or password protected."""
+    slug, ev, uid, u = find_uploader(utoken)
+    request.session["up:" + ev["token"]] = uid
+    items, cover = gallery_items(slug, ev)
+    return templates.TemplateResponse(request, "event.html", ctx(
+        request, ev=ev, token=ev["token"], items=items, cover=cover, legend=uploader_legend(ev, items),
+        uploader={**u, "id": uid, "utoken": utoken}, chunk_size=CHUNK_SIZE))
+
+
+@app.post("/u/{utoken}/upload")
+def uploader_upload(request: Request, utoken: str, chunk: UploadFile = File(...), upload_id: str = Form(...),
+                    filename: str = Form(...), offset: int = Form(...), total: int = Form(...), csrf: str = Form("")):
+    slug, ev, uid, u = find_uploader(utoken)
     check_csrf(request, csrf)
-    if not ev["guest_upload"]:
-        raise HTTPException(403, "uploads are off for this event")
-    return receive_chunk(slug, upload_id, filename, offset, total, chunk.file)
+    return receive_chunk(slug, upload_id, filename, offset, total, chunk.file, uploader_id=uid)
 
 
 # ---------- admin ----------
@@ -635,8 +708,13 @@ def admin_event(request: Request, slug: str):
     require_admin(request)
     _, ev = get_event(slug)
     items = media_files(slug, ev["sort"])
+    base = BASE_URL or str(request.base_url).rstrip("/")
+    uploaders = [{"id": uid, **u, "url": f"{base}/u/{u['token']}", "count": sum(1 for i in items if i["by"] == uid)}
+                 for uid, u in ev.get("uploaders", {}).items() if not u.get("revoked")]
     return templates.TemplateResponse(request, "admin_event.html", ctx(
         request, slug=slug, ev=ev, items=items, url=share_url(request, ev["token"]), sorts=SORTS,
+        legend=uploader_legend(ev, items), uploaders=uploaders,
+        colours={uid: u["colour"] for uid, u in ev.get("uploaders", {}).items()},
         total=sum(i["size"] for i in items), expired=expired(ev),
         folder=f"{HOST_PHOTOS_PATH.rstrip('/')}/events/{slug}", ssh_target=SSH_TARGET,
         chunk_size=CHUNK_SIZE, missing_thumbs=sum(1 for i in items if not i["video"] and not cache_path(slug, "thumb", i["name"]).exists()),
@@ -664,6 +742,31 @@ def rescan(request: Request, slug: str, csrf: str = Form("")):
     return RedirectResponse(f"/admin/events/{slug}?rescanned={len(todo)}", 303)
 
 
+@app.post("/admin/events/{slug}/uploaders")
+def add_uploader(request: Request, slug: str, name: str = Form(...), csrf: str = Form("")):
+    require_admin(request); check_csrf(request, csrf)
+    get_event(slug)
+
+    def apply(ev):
+        ups = ev.setdefault("uploaders", {})
+        used = {u["colour"] for u in ups.values()}
+        colour = next((c for c in UPLOADER_COLOURS if c not in used), UPLOADER_COLOURS[len(ups) % len(UPLOADER_COLOURS)])
+        ups[secrets.token_hex(4)] = {"name": name.strip()[:40] or "Uploader", "colour": colour,
+                                     "token": secrets.token_urlsafe(12), "created": time.time(), "revoked": False}
+    update_event(slug, apply)
+    return RedirectResponse(f"/admin/events/{slug}#uploaders", 303)
+
+
+@app.post("/admin/events/{slug}/uploaders/{uid}/revoke")
+def revoke_uploader(request: Request, slug: str, uid: str, csrf: str = Form("")):
+    """Turns the link off. Their photos stay, still tagged with their name and colour."""
+    require_admin(request); check_csrf(request, csrf)
+    get_event(slug)
+    update_event(slug, lambda ev: ev.get("uploaders", {}).get(uid, {}).__setitem__("revoked", True)
+                 if uid in ev.get("uploaders", {}) else None)
+    return RedirectResponse(f"/admin/events/{slug}#uploaders", 303)
+
+
 @app.post("/admin/events/{slug}/delete-photos")
 def delete_photos(request: Request, slug: str, names: list[str] = Form(...), csrf: str = Form("")):
     require_admin(request); check_csrf(request, csrf)
@@ -674,6 +777,7 @@ def delete_photos(request: Request, slug: str, names: list[str] = Form(...), csr
             continue
         p.unlink()
         drop_cache(slug, n)
+        set_source(slug, n, "")
     return RedirectResponse(f"/admin/events/{slug}", 303)
 
 
@@ -688,7 +792,7 @@ def set_cover(request: Request, slug: str, name: str = Form(...), csrf: str = Fo
 @app.post("/admin/events/{slug}/settings")
 def event_settings(request: Request, slug: str, name: str = Form(...), description: str = Form(""),
                    event_date: str = Form(""), expires: str = Form(""), sort: str = Form("taken"),
-                   public: str = Form(""), guest_upload: str = Form(""), password: str = Form(""),
+                   public: str = Form(""), password: str = Form(""),
                    clear_password: str = Form(""), regen: str = Form(""), csrf: str = Form("")):
     require_admin(request); check_csrf(request, csrf)
 
@@ -699,7 +803,6 @@ def event_settings(request: Request, slug: str, name: str = Form(...), descripti
         ev["expires"] = expires
         ev["sort"] = sort if sort in SORTS else "taken"
         ev["public"] = bool(public)
-        ev["guest_upload"] = bool(guest_upload)
         if clear_password:
             ev["password"] = ""
         elif password:
@@ -722,6 +825,7 @@ def delete_event(request: Request, slug: str, confirm: str = Form(""), csrf: str
             raise HTTPException(404)
         shutil.rmtree(EVENTS_DIR / slug, ignore_errors=True)
         shutil.rmtree(CACHE_DIR / slug, ignore_errors=True)
+        (SOURCES_DIR / f"{slug}.json").unlink(missing_ok=True)
         del db["events"][slug]
         save_db(db)
     return RedirectResponse("/admin", 303)

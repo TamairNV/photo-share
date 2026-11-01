@@ -19,6 +19,21 @@
 <p class="mut" style="margin:4px 0">Folder on server: <code>{{ folder }}</code></p>
 </div></div>
 
+<h2 id="uploaders">Uploader links</h2>
+<div class="card">
+<p class="mut" style="margin-top:0">Give someone their own link so they can add photos. The normal share link stays view-only. Everything they upload gets their colour.</p>
+{% for u in uploaders %}<div class="row" style="margin-bottom:8px">
+<span class="dot" style="background:{{ u.colour }};width:14px;height:14px"></span><b style="min-width:90px">{{ u.name }}</b>
+<span class="mut">{{ u.count }} uploaded</span>
+<code id="up-{{ u.id }}" style="flex:1">{{ u.url }}</code>
+<button class="sec" type="button" onclick="copyText('up-{{ u.id }}', this)">Copy</button>
+<form method="post" action="/admin/events/{{ slug }}/uploaders/{{ u.id }}/revoke" onsubmit="return confirm('Turn off {{ u.name }}\'s upload link? Their photos stay.')">
+<input type="hidden" name="csrf" value="{{ csrf }}"><button class="bad">Turn off</button></form></div>{% endfor %}
+<form method="post" action="/admin/events/{{ slug }}/uploaders" class="row">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="text" name="name" placeholder="Who's it for? e.g. Jess" required maxlength="40" style="flex:1"><button>Create upload link</button></form>
+</div>
+
 <h2>Upload</h2>
 {% set upload_url = "/admin/events/" ~ slug ~ "/upload" %}{% include "_uploader.html" %}
 
@@ -41,8 +56,10 @@
 <span class="row" style="font-size:15px;font-weight:normal">
 <button class="sec" type="button" id="selbtn" onclick="toggleSelect()">Select</button>
 <button class="bad" type="button" id="delbtn" style="display:none" onclick="bulkDelete()">Delete selected</button></span></h2>
+{% include "_legend.html" %}
 <div class="grid" id="grid">{% for it in items %}
-<div class="it {% if it.video %}vid{% endif %}" data-name="{{ it.name }}" title="{{ it.name }} · {{ it.size|size }}">
+<div class="it {% if it.video %}vid{% endif %}" data-name="{{ it.name }}" data-by="{{ it.by }}" title="{{ it.name }} · {{ it.size|size }}">
+{% if it.by and colours.get(it.by) %}<span class="byb" style="--c:{{ colours[it.by] }}"></span>{% endif %}
 {% if it.video %}<video src="/e/{{ ev.token }}/file/{{ it.name|q }}#t=0.1" preload="metadata" muted></video>
 {% else %}<img loading="lazy" src="/admin/events/{{ slug }}/thumb/{{ it.name|q }}" alt="">{% endif %}
 <span class="chk"></span>
@@ -66,7 +83,6 @@
 {% if ev.password %}<label><input type="checkbox" name="clear_password" value="1"> Remove</label>{% endif %}</p>
 <p class="row"><span style="width:110px">Link expires</span><input type="date" name="expires" value="{{ ev.expires }}"><span class="mut">Leave empty for never</span></p>
 <p><label><input type="checkbox" name="public" value="1" {% if ev.public %}checked{% endif %}> Share link is on</label></p>
-<p><label><input type="checkbox" name="guest_upload" value="1" {% if ev.guest_upload %}checked{% endif %}> Let guests upload their own photos</label></p>
 <p><label><input type="checkbox" name="regen" value="1"> Make a new link (old one stops working)</label></p>
 <button>Save</button></form>
 

@@ -16,7 +16,13 @@ The app listens on `127.0.0.1:8100`. The Cloudflare tunnel points `share.tamairn
 - Photos grouped by day and sorted by time taken (EXIF for photos, recording time for videos, otherwise file date)
 - Full screen viewer with swipe/arrow keys and the capture time
 - Download one, **select several and download as a zip**, select a whole day, or download everything
-- Optional: password, expiry date, uploading their own photos
+- Optional: password and expiry date
+
+**Uploader links**
+- Make a named upload link per person (e.g. one for Jess, one for Tom). They can add photos; the normal share link stays view-only
+- Every photo gets its uploader's colour as a border, with a legend to filter by person (your own uploads/rsync show as `OWNER_NAME`)
+- Turn a link off any time; their photos stay tagged
+- Upload links work even if the public link is off or password protected, and live at `/u/...` (outside `/admin`, so not behind Cloudflare Access)
 
 **Admin**
 - Upload in the browser with progress bars, 3 files at a time
@@ -29,7 +35,7 @@ The app listens on `127.0.0.1:8100`. The Cloudflare tunnel points `share.tamairn
 ## Storage
 - Photos are plain files in `PHOTOS_PATH/events/<event>/`, subfolders included. No lock-in.
 - Copy files in any way you like (rsync, scp, Samba). New folders become events automatically.
-- Event settings live in `PHOTOS_PATH/events.json`. Thumbnails cache in `PHOTOS_PATH/.cache` (safe to delete).
+- Event settings live in `PHOTOS_PATH/events.json`, who-uploaded-what in `PHOTOS_PATH/.sources/`. Thumbnails cache in `PHOTOS_PATH/.cache` (safe to delete).
 - Formats: jpg, png, webp, gif, heic, tiff, mp4, mov, webm.
 
 ## Update

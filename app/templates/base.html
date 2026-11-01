@@ -28,6 +28,10 @@ textarea,select,input[type=date]{background:#222226;border:1px solid #333;color:
 .it.sel img,.it.sel video{opacity:.75}
 .bar{height:6px;background:#2a2a2e;border-radius:3px;overflow:hidden;margin-top:8px}.bar>div{height:100%;width:0;background:var(--acc);transition:width .2s}
 .ok{color:#46a758}
+.it .byb{position:absolute;inset:0;border:3px solid var(--c);border-radius:inherit;pointer-events:none}
+.it.hid{display:none}
+.legend{margin:6px 0 4px}.chip{background:#1f1f22;border:1px solid #333;border-radius:999px;padding:5px 12px;font-size:14px;color:var(--fg)}
+.chip.on{border-color:var(--acc);background:#22324d}.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:0}
 @media (max-width:600px){.grid{grid-template-columns:repeat(3,1fr);gap:3px}.grid .it{border-radius:3px}.wrap{padding:12px}h1{font-size:22px}}
 </style>{% block head %}{% endblock %}
 </head><body><div class="wrap">{% block body %}{% endblock %}</div></body></html>
