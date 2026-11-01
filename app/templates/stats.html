@@ -1,0 +1,226 @@
+{% extends "base.html" %}{% from "_icons.html" import i %}{% block title %}Stats · Admin{% endblock %}{% block head %}<style>
+:root{--s1:#3987e5;--s2:#d95926;--grid:#2a2a2e;--axis:#6f6f76}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.tile{background:var(--card);border-radius:12px;padding:14px 16px}
+.tile .k{font-size:13px;color:var(--mut)}.tile .v{font-size:28px;font-weight:600;line-height:1.2;margin-top:2px;font-variant-numeric:tabular-nums}
+.tile .s{font-size:12.5px;color:var(--mut);margin-top:2px}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+.card h3{margin:0 0 8px;font-size:15px}.card .note{font-size:12.5px;color:var(--mut);margin:6px 0 0}
+.live{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.live .v{font-size:30px}
+.chart{position:relative;width:100%}.chart svg{display:block;width:100%;overflow:visible}
+.tip{position:absolute;pointer-events:none;background:#26262a;border:1px solid #3a3a40;border-radius:8px;padding:6px 10px;font-size:12.5px;white-space:nowrap;display:none;z-index:5;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+.tip b{font-weight:600}.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.legend2{display:flex;gap:14px;font-size:12.5px;color:var(--mut);margin:-2px 0 6px}
+.mini{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+table.t{font-size:14px}table.t td,table.t th{padding:7px 6px}table.t th{color:var(--mut);font-weight:500;font-size:12.5px}
+table.t td.n,table.t th.n{text-align:right;font-variant-numeric:tabular-nums}
+.feed{max-height:420px;overflow:auto;font-size:13.5px}.feed div{padding:6px 0;border-bottom:1px solid #26262a;display:flex;gap:10px}
+.feed .tm{color:var(--mut);flex:none;width:64px;font-variant-numeric:tabular-nums}
+.pill{font-size:11.5px;background:#2a2a2e;border-radius:6px;padding:1px 6px;color:var(--mut)}
+.hbar{display:flex;align-items:center;gap:8px;font-size:13.5px;margin:5px 0}.hbar .lb{width:90px;flex:none}
+.hbar .tr{flex:1;height:8px;background:#26262a;border-radius:4px;overflow:hidden}.hbar .tr div{height:100%;background:var(--s1);border-radius:4px}
+.hbar .nm{width:40px;text-align:right;color:var(--mut);font-variant-numeric:tabular-nums}
+.mv{font-size:13.5px;padding:6px 0;border-top:1px solid #26262a}.mv .bar{margin-top:4px}
+.tops{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.tops a{display:block;color:var(--fg);font-size:12px}.tops .im{aspect-ratio:1;background:#222 center/cover;border-radius:8px}
+.hl{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:14px}.hl .mut{font-size:12.5px}
+.warn{color:#ffb224}.bad2{color:var(--bad)}
+select{padding:7px 10px}
+@media (max-width:600px){.cols{grid-template-columns:1fr}.mini{grid-template-columns:1fr 1fr;gap:8px}.mini .card{padding:12px}.tile .v{font-size:24px}}
+</style>{% endblock %}{% block body %}
+<header><div class="row" style="gap:14px"><a href="/admin" class="btn sec iconbtn" aria-label="Back to events">{{ i('back', 20) }}</a><h1>Stats</h1></div>
+<div class="row"><div class="chips" id="ranges">{% for r, l in [("24h","24 hours"),("7d","7 days"),("30d","30 days"),("90d","90 days")] %}<button type="button" class="chip" data-r="{{ r }}">{{ l }}</button>{% endfor %}</div>
+<select id="evsel"><option value="">All events</option>{% for slug, name in events %}<option value="{{ slug }}">{{ name }}</option>{% endfor %}</select></div></header>
+
+<div class="card" style="margin-bottom:14px">
+<h3>Right now</h3>
+<div class="live">
+<div><div class="mut" style="font-size:13px">Sending to guests</div><div class="v" id="l-out">–</div></div>
+<div><div class="mut" style="font-size:13px">Receiving (uploads)</div><div class="v" id="l-in">–</div></div>
+<div><div class="mut" style="font-size:13px">Transfers in progress</div><div class="v" id="l-n">–</div></div>
+<div><div class="mut" style="font-size:13px">Uploads in flight</div><div class="v" id="l-up">–</div></div>
+</div>
+<div class="legend2"><span><span class="sw" style="background:var(--s1)"></span>Sending</span><span><span class="sw" style="background:var(--s2)"></span>Receiving</span><span>last 5 minutes</span></div>
+<div class="chart" id="c-live" style="height:120px"></div>
+<div id="moving"></div>
+</div>
+
+<div class="tiles" id="tiles"></div>
+
+<h2>Over time</h2>
+<div class="mini">
+<div class="card"><h3>People</h3><div class="chart" id="c-visitors" style="height:120px"></div></div>
+<div class="card"><h3>Photos &amp; videos opened</h3><div class="chart" id="c-views" style="height:120px"></div></div>
+<div class="card"><h3>Files downloaded</h3><div class="chart" id="c-files" style="height:120px"></div></div>
+<div class="card"><h3>Files uploaded</h3><div class="chart" id="c-uploads" style="height:120px"></div></div>
+</div>
+
+<h2>Data transfer</h2>
+<div class="cols">
+<div class="card"><div class="hl" id="xfer"></div>
+<div class="legend2" style="margin-top:12px"><span><span class="sw" style="background:var(--s1)"></span>Sent</span><span><span class="sw" style="background:var(--s2)"></span>Received</span></div>
+<div class="chart" id="c-bytes" style="height:150px"></div>
+<p class="note">Measured at your server. For public events Cloudflare keeps copies of thumbnails and photos, so repeat views come from Cloudflare and don't use your upload.</p></div>
+<div class="card"><h3>Server</h3><div class="hl" id="health"></div></div>
+</div>
+
+<h2>Events</h2>
+<div class="card" style="overflow-x:auto"><table class="t" id="t-events"></table></div>
+
+<div class="cols" style="margin-top:14px">
+<div class="card"><h3>Uploads by person</h3><table class="t" id="t-up"></table></div>
+<div class="card"><h3>Devices</h3><div id="devices"></div><h3 style="margin-top:14px">Countries</h3><div id="countries"></div></div>
+</div>
+
+<h2>Most popular</h2>
+<div class="card"><div class="tops" id="tops"></div></div>
+
+<div class="cols" style="margin-top:14px">
+<div class="card"><h3>Recent activity</h3><div class="feed" id="feed"></div></div>
+<div class="card"><h3>Errors</h3><div id="errkinds" class="row" style="margin-bottom:6px"></div><div class="feed" id="errs"></div></div>
+</div>
+<p class="mut" style="font-size:12.5px;margin-top:16px">People are counted by a scrambled version of their internet address, so one household on the same Wi-Fi counts once. Your own visits as admin are left out.</p>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num = n => (n || 0).toLocaleString();
+function size(n){ n = n || 0; const u = ['B','KB','MB','GB','TB']; let i = 0; while (n >= 1024 && i < 4) { n /= 1024; i++; } return (i && n < 10 ? n.toFixed(1) : Math.round(n)) + ' ' + u[i]; }
+const rate = n => size(n) + '/s';
+const ago = t => { const s = Date.now() / 1000 - t; return s < 60 ? 'just now' : s < 3600 ? Math.floor(s / 60) + 'm ago' : s < 86400 ? Math.floor(s / 3600) + 'h ago' : Math.floor(s / 86400) + 'd ago'; };
+const hm = t => new Date(t * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+const dur = s => s < 3600 ? Math.round(s / 60) + ' min' : s < 86400 ? (s / 3600).toFixed(1) + ' h' : (s / 86400).toFixed(1) + ' days';
+const guest = v => 'Guest ' + (v || '').slice(0, 4);
+const FLAG = c => c && c.length === 2 && c !== 'XX' && c !== 'T1' ? String.fromCodePoint(...[...c.toUpperCase()].map(x => 127397 + x.charCodeAt(0))) : '';
+
+// ---- tiny SVG charts with hover ----
+function nice(max){ if (max <= 0) return 1; const p = 10 ** Math.floor(Math.log10(max)), f = max / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p; }
+function chart(el, xs, series, o){
+  // series: [{name, color, data}], o: {bars, fmt, xfmt}
+  const W = el.clientWidth || 300, H = el.clientHeight || 120, L = 44, B = 18, T = 6, pw = W - L - 4, ph = H - B - T;
+  const max = nice(Math.max(1, ...series.flatMap(s => s.data))), n = xs.length, step = pw / Math.max(1, n);
+  const x = i => L + (o.bars ? i * step + step / 2 : n > 1 ? i * pw / (n - 1) : pw / 2), y = v => T + ph - v / max * ph;
+  let g = '';
+  for (const f of [0, .5, 1]) g += `<line x1="${L}" x2="${L + pw}" y1="${y(max * f)}" y2="${y(max * f)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(max * f) + 4}" text-anchor="end" font-size="10.5" fill="var(--axis)">${esc(o.fmt(max * f))}</text>`;
+  const every = Math.ceil(n / Math.max(2, Math.floor(pw / 64)));
+  for (let i = 0; i < n; i += every) g += `<text x="${x(i)}" y="${H - 4}" text-anchor="middle" font-size="10.5" fill="var(--axis)">${esc(o.xfmt(xs[i]))}</text>`;
+  if (o.bars) { const s = series[0], bw = Math.max(2, Math.min(28, step - 3));
+    s.data.forEach((v, i) => { if (!v) return; const h = Math.max(2, v / max * ph);
+      g += `<path d="M${x(i) - bw / 2},${T + ph} v${-(h - Math.min(4, h / 2))} q0,-${Math.min(4, h / 2)} ${Math.min(4, bw / 2)},-${Math.min(4, h / 2)} h${bw - 2 * Math.min(4, bw / 2)} q${Math.min(4, bw / 2)},0 ${Math.min(4, bw / 2)},${Math.min(4, h / 2)} V${T + ph} Z" fill="${s.color}"/>`; });
+  } else for (const s of series) {
+    const pts = s.data.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    g += `<polygon points="${L},${T + ph} ${pts} ${x(n - 1)},${T + ph}" fill="${s.color}" opacity=".14"/><polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round"/>`;
+  }
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" height="${H}">${g}<line class="xh" y1="${T}" y2="${T + ph}" stroke="#777" stroke-dasharray="3 3" style="display:none"/></svg><div class="tip"></div>`;
+  const svg = el.querySelector('svg'), tip = el.querySelector('.tip'), xh = el.querySelector('.xh');
+  const move = e => { const r = svg.getBoundingClientRect(), px = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+    const i = Math.max(0, Math.min(n - 1, o.bars ? Math.floor((px - L) / step) : Math.round((px - L) / pw * (n - 1))));
+    xh.setAttribute('x1', x(i)); xh.setAttribute('x2', x(i)); xh.style.display = '';
+    tip.innerHTML = `<div class="mut">${esc(o.tipx ? o.tipx(xs[i]) : o.xfmt(xs[i]))}</div>` + series.map(s => `<div><span class="sw" style="background:${s.color}"></span>${esc(s.name)} <b>${esc(o.fmt(s.data[i]))}</b></div>`).join('');
+    tip.style.display = 'block'; const tx = x(i) + 12; tip.style.left = (tx + tip.offsetWidth > W ? x(i) - tip.offsetWidth - 12 : tx) + 'px'; tip.style.top = '0px'; };
+  svg.addEventListener('mousemove', move); svg.addEventListener('touchstart', move, {passive: true}); svg.addEventListener('touchmove', move, {passive: true});
+  svg.addEventListener('mouseleave', () => { tip.style.display = 'none'; xh.style.display = 'none'; });
+}
+
+// ---- state ----
+const qs = new URLSearchParams(location.search);
+let range = qs.get('range') || localStorage.statsRange || '7d', evSel = qs.get('event') || '', data = null;
+$('evsel').value = evSel;
+function setChips(){ document.querySelectorAll('#ranges .chip').forEach(c => c.classList.toggle('on', c.dataset.r === range)); }
+$('ranges').onclick = e => { const c = e.target.closest('.chip'); if (!c) return; range = c.dataset.r; localStorage.statsRange = range; setChips(); load(); };
+$('evsel').onchange = () => { evSel = $('evsel').value; load(); };
+
+const tile = (k, v, s) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
+function xfmt(t){ const d = new Date(t * 1000); return data.bucket < 86400 ? (data.range === '24h' ? d.toLocaleTimeString([], {hour: '2-digit'}) : d.toLocaleDateString([], {weekday: 'short'})) : d.toLocaleDateString([], {day: 'numeric', month: 'short'}); }
+function tipx(t){ const d = new Date(t * 1000), e = new Date((t + data.bucket) * 1000);
+  return data.bucket >= 86400 ? d.toLocaleDateString([], {weekday: 'short', day: 'numeric', month: 'short'}) : d.toLocaleDateString([], {weekday: 'short', day: 'numeric', month: 'short'}) + ', ' + hm(t) + '–' + hm(t + data.bucket); }
+
+function render(){
+  const t = data.totals, tr = data.traffic, S = data.series, xs = data.labels;
+  $('tiles').innerHTML = [
+    tile('People', num(t.visitors), `${num(t.page_views)} gallery visits`),
+    tile('Photos viewed', num(t.photo_views), `${num(t.photos_seen)} different photos`),
+    tile('Videos played', num(t.video_plays)),
+    tile('Files downloaded', num(t.files_out), `${num(t.single_dl)} single · ${num(t.zip_files)} in ${num(t.zips)} ZIPs · ${num(t.saves)} saved to phone`),
+    tile('Download size', size(t.bytes_files_out), 'what guests took home'),
+    tile('Uploaded by guests', num(t.uploads), `${size(t.upload_bytes)} from ${num(t.uploaders)} ${t.uploaders === 1 ? 'person' : 'people'}`),
+    tile('Data sent', size(tr.out), `${size(tr.in)} received`),
+    tile('Errors', num(t.errors), t.unlock_fails ? `${num(t.unlock_fails)} wrong passwords` : 'things that failed for guests'),
+  ].join('');
+  const o = {bars: true, fmt: num, xfmt, tipx};
+  chart($('c-visitors'), xs, [{name: 'People', color: 'var(--s1)', data: S.visitors}], o);
+  chart($('c-views'), xs, [{name: 'Opened', color: 'var(--s1)', data: S.photo_views}], o);
+  chart($('c-files'), xs, [{name: 'Files', color: 'var(--s1)', data: S.files_out}], o);
+  chart($('c-uploads'), xs, [{name: 'Files', color: 'var(--s1)', data: S.uploads}], o);
+  chart($('c-bytes'), xs, [{name: 'Sent', color: 'var(--s1)', data: S.bytes_out}, {name: 'Received', color: 'var(--s2)', data: S.bytes_in}], {fmt: size, xfmt, tipx});
+  const avg = tr.out / Math.max(1, ({'24h': 86400, '7d': 604800, '30d': 2592000, '90d': 7776000})[data.range]);
+  $('xfer').innerHTML = `<div><div class="mut">Sent</div><b style="font-size:22px">${size(tr.out)}</b></div><div><div class="mut">Received</div><b style="font-size:22px">${size(tr.in)}</b></div>
+    <div><div class="mut">Requests</div>${num(tr.req)}</div><div><div class="mut">Average send rate</div>${rate(avg)}</div>` + (evSel ? `<div class="mut" style="grid-column:1/-1">Transfer totals are for the whole site, not just this event.</div>` : '');
+
+  const E = data.events;
+  $('t-events').innerHTML = E.length ? `<tr><th>Event</th><th class="n">People</th><th class="n">Visits</th><th class="n">Opened</th><th class="n">Downloaded</th><th class="n">Size</th><th class="n">Uploaded</th><th class="n">Last activity</th></tr>` +
+    E.map(e => `<tr><td><a href="/admin/events/${encodeURIComponent(e.event)}">${esc(e.name)}</a></td><td class="n">${num(e.visitors)}</td><td class="n">${num(e.page_views)}</td><td class="n">${num(e.views)}</td><td class="n">${num(e.files_out)}</td><td class="n">${size(e.bytes_out)}</td><td class="n">${num(e.uploads)}${e.uploads ? ' · ' + size(e.upload_bytes) : ''}</td><td class="n mut">${ago(e.last)}</td></tr>`).join('')
+    : '<tr><td class="mut">Nothing yet in this period.</td></tr>';
+  const U = data.uploaders;
+  $('t-up').innerHTML = U.length ? `<tr><th>Who</th><th>Event</th><th class="n">Files</th><th class="n">Size</th><th class="n">Last</th></tr>` +
+    U.map(u => `<tr><td><span class="dot" style="background:${esc(u.colour)}"></span>${esc(u.name)}</td><td class="mut">${esc(u.event)}</td><td class="n">${u.files ? num(u.files) : '<span class="mut">opened link</span>'}</td><td class="n">${u.files ? size(u.bytes) : ''}</td><td class="n mut">${ago(u.last)}</td></tr>`).join('')
+    : '<tr><td class="mut">No uploads in this period.</td></tr>';
+  const hb = (list, label) => { const m = Math.max(1, ...list.map(x => x.v)); return list.length ? list.map(x => `<div class="hbar"><span class="lb">${label(x.k)}</span><span class="tr"><div style="width:${100 * x.v / m}%"></div></span><span class="nm">${num(x.v)}</span></div>`).join('') : '<p class="mut">Nothing yet.</p>'; };
+  $('devices').innerHTML = hb(data.devices, k => ({phone: 'Phone', computer: 'Computer', tablet: 'Tablet', bot: 'Link preview', unknown: 'Unknown'})[k] || esc(k));
+  $('countries').innerHTML = hb(data.countries, k => (FLAG(k) + ' ' + esc(k || '?')));
+  $('tops').innerHTML = data.top.length ? data.top.map(p => `<a href="/admin/events/${encodeURIComponent(p.slug)}" title="${esc(p.item)}"><div class="im" style="background-image:url('/admin/events/${encodeURIComponent(p.slug)}/thumb/${encodeURIComponent(p.item)}')"></div>
+    <div class="mut">${num(p.views)} views${p.downloads ? ` · ${num(p.downloads)} saved` : ''}</div></a>`).join('') : '<p class="mut">Nothing opened yet in this period.</p>';
+  const what = r => { const it = esc((r.item || '').split('/').pop());
+    switch (r.kind) {
+      case 'page_view': return `opened <b>${esc(r.ev_name)}</b>`;
+      case 'video_play': return `played ${it}`;
+      case 'download': return `downloaded ${it} <span class="mut">${size(r.bytes)}</span>`;
+      case 'zip': return `downloaded a ZIP of ${num(r.n)} ${r.detail === 'all' ? '(everything)' : 'selected'} <span class="mut">${size(r.bytes)}</span>`;
+      case 'save': return `saved ${num(r.n)} to their phone <span class="mut">${size(r.bytes)}</span>`;
+      case 'upload': return `uploaded ${it} <span class="mut">${size(r.bytes)}</span>`;
+      case 'uploader_open': return `opened their upload link`;
+      case 'unlock_fail': return `<span class="warn">typed a wrong password</span>`;
+      case 'error': return `<span class="bad2">${esc(r.detail)}</span> ${esc(r.item)}`;
+      default: return esc(r.kind);
+    } };
+  const person = r => r.who === 'admin' ? 'You' : r.who_name ? esc(r.who_name) : (FLAG(r.country) + ' ' + guest(r.visitor));
+  $('feed').innerHTML = data.recent.length ? data.recent.map(r => `<div><span class="tm">${ago(r.ts)}</span><span><b>${person(r)}</b> ${what(r)}${r.kind !== 'page_view' && !evSel && r.ev_name && r.kind !== 'error' ? ` <span class="pill">${esc(r.ev_name)}</span>` : ''}</span></div>`).join('') : '<p class="mut">Nothing yet.</p>';
+  $('errkinds').innerHTML = data.error_kinds.map(k => `<span class="pill">${esc(k.detail)} × ${num(k.c)}</span>`).join('');
+  $('errs').innerHTML = data.errors.length ? data.errors.map(r => `<div><span class="tm">${ago(r.ts)}</span><span><span class="bad2">${esc(r.detail)}</span> ${esc(r.item)} <span class="mut">${FLAG(r.country)} ${guest(r.visitor)} · ${esc(r.device)}</span></span></div>`).join('') : '<p class="mut">No errors in this period.</p>';
+}
+
+async function load(){
+  history.replaceState(null, '', '?' + new URLSearchParams({range, ...(evSel ? {event: evSel} : {})}));
+  try { const r = await fetch(`/admin/stats.json?range=${range}&event=${encodeURIComponent(evSel)}`); if (!r.ok) throw new Error(r.status);
+    data = await r.json(); render(); } catch (e) { toast('Could not load stats', true); }
+}
+
+async function live(){
+  try { const r = await fetch('/admin/stats/live.json'); if (!r.ok) throw 0; const L = await r.json(), h = L.health;
+    $('l-out').textContent = rate(L.now_out); $('l-in').textContent = rate(L.now_in); $('l-n').textContent = L.moving.length; $('l-up').textContent = h.uploads_active;
+    chart($('c-live'), L.series.map(s => s[0]), [{name: 'Sending', color: 'var(--s1)', data: L.series.map(s => s[1])}, {name: 'Receiving', color: 'var(--s2)', data: L.series.map(s => s[2])}],
+      {fmt: rate, xfmt: t => { const a = Math.round(L.now - t); return a < 5 ? 'now' : '-' + Math.round(a / 60 * 10) / 10 + 'm'; }, tipx: t => new Date(t * 1000).toLocaleTimeString()});
+    $('moving').innerHTML = L.moving.map(m => { const done = m.out + m.in, pct = m.total ? Math.min(100, 100 * m.out / m.total) : 0;
+      const verb = m.kind === 'upload' ? 'Receiving' : m.kind === 'zip' ? 'Sending ZIP' : 'Sending';
+      return `<div class="mv"><b>${verb}</b> ${esc(m.label)} <span class="mut">· ${guest(m.visitor)} · ${size(done)}${m.total ? ' of ' + size(m.total) : ''} · ${rate(m.rate)} · ${m.secs}s</span>${m.total ? `<div class="bar"><div style="width:${pct}%"></div></div>` : ''}</div>`; }).join('');
+    const disk = h.disk_used / h.disk_total, mem = h.mem_total ? 1 - h.mem_avail / h.mem_total : null;
+    $('health').innerHTML = `
+      <div style="grid-column:1/-1"><div class="mut">Photo drive</div><b class="${h.disk_free < 20e9 ? 'bad2' : h.disk_free < 100e9 ? 'warn' : ''}">${size(h.disk_free)} free</b> <span class="mut">of ${size(h.disk_total)}</span><div class="bar"><div style="width:${100 * disk}%;${disk > .9 ? 'background:var(--bad)' : ''}"></div></div></div>
+      <div><div class="mut">Load</div>${h.load ? h.load.map(x => x.toFixed(2)).join(' · ') : '?'} <span class="mut">(${h.cpus} cores)</span></div>
+      <div><div class="mut">Memory used</div>${mem === null ? '?' : Math.round(mem * 100) + '%'} <span class="mut">of ${size(h.mem_total)}</span></div>
+      ${h.temp ? `<div><div class="mut">CPU temperature</div><span class="${h.temp > 80 ? 'bad2' : h.temp > 70 ? 'warn' : ''}">${Math.round(h.temp)}°C</span></div>` : ''}
+      <div><div class="mut">Uploads in progress</div>${h.uploads_active}${h.uploads_stale ? ` <span class="mut">(+${h.uploads_stale} abandoned)</span>` : ''}</div>
+      <div><div class="mut">Thumbnails queued</div>${num(h.thumb_queue)}</div>
+      <div><div class="mut">App running for</div>${dur(h.uptime)}</div>
+      <div><div class="mut">Open requests</div>${num(L.open_requests)}</div>
+      <div><div class="mut">Stats file</div>${size(h.stats_db)}</div>`;
+  } catch (e) {}
+}
+setChips(); load(); live();
+setInterval(live, 3000);
+setInterval(() => { if (document.visibilityState === 'visible') load(); }, 30000);
+addEventListener('resize', () => { if (data) render(); });
+</script>
+{% endblock %}

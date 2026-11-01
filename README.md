@@ -32,11 +32,12 @@ The app listens on `127.0.0.1:8100`. The Cloudflare tunnel points `share.tamairn
 - Cover photo, description, date, sort order, QR code, view and download counts
 - Delete single photos or select a bunch and delete them
 - Turn a link off, regenerate it, or delete the whole event
+- **Stats** page (`/admin/stats`): live send/receive rate and transfers in progress, people, photos viewed, videos played, files downloaded (single, ZIP, saved to phone), uploads per person, data sent/received, errors, devices, countries, most popular photos, recent activity, and server health (disk, memory, load, uploads in flight). Filter by 24h/7d/30d/90d and by event
 
 ## Storage
 - Photos are plain files in `PHOTOS_PATH/events/<event>/`, subfolders included. No lock-in.
 - Copy files in any way you like (rsync, scp, Samba). New folders become events automatically.
-- Event settings live in `PHOTOS_PATH/events.json`, who-uploaded-what in `PHOTOS_PATH/.sources/`. Thumbnails cache in `PHOTOS_PATH/.cache` (safe to delete).
+- Event settings live in `PHOTOS_PATH/events.json`, who-uploaded-what in `PHOTOS_PATH/.sources/`. Thumbnails cache in `PHOTOS_PATH/.cache` (safe to delete). Stats live in `PHOTOS_PATH/.stats.db` (SQLite, kept 120 days, safe to delete; visitors are stored as salted hashes, not IPs).
 - Formats: jpg, png, webp, gif, heic, tiff, mp4, mov, webm.
 
 ## Update

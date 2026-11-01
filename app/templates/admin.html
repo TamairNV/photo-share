@@ -5,7 +5,8 @@
 .tag{font-size:12px;background:#2a2a2e;border-radius:6px;padding:1px 7px;margin-right:4px}
 </style>{% endblock %}{% block body %}
 <header><h1>Events</h1>
-<form method="post" action="/admin/logout"><button class="sec">{{ i('logout', 18) }} Log out</button></form></header>
+<div class="row"><a class="btn sec" href="/admin/stats">{{ i('chart', 18) }} Stats</a>
+<form method="post" action="/admin/logout"><button class="sec">{{ i('logout', 18) }} Log out</button></form></div></header>
 <form method="post" action="/admin/events" class="card row" style="margin-bottom:20px">
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <input type="text" name="name" placeholder="New event name, e.g. Sam's 30th" required style="flex:1;min-width:220px"><button>{{ i('plus', 18) }} Create event</button></form>
