@@ -15,6 +15,29 @@
 .day{justify-content:space-between;margin:22px 0 10px}.day h2{font-size:17px}
 .it .tm{position:absolute;bottom:5px;left:6px;font-size:12px;color:#fff;text-shadow:0 0 4px #000;opacity:.9;pointer-events:none}
 .it img{transition:transform .25s}.it:hover img{transform:scale(1.04)}
+/* ---- phone layout ---- */
+#mbar,#job,#lbbar{display:none}
+.big{flex:1;font-size:17px;font-weight:600;padding:15px 12px;border-radius:14px;text-align:center}
+.icon{min-width:54px;font-size:20px;padding:13px 0;border-radius:14px;text-align:center}
+@media (pointer:coarse){
+  .tools{display:none}
+  body{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+  #mbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:8;gap:10px;align-items:center;padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+    background:rgba(18,18,20,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid #2a2a2e}
+  #mbar .cnt{font-weight:600;min-width:70px;text-align:center}
+  .selday{font-size:15px;padding:6px 0}
+  #lb .top{padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:linear-gradient(rgba(0,0,0,.6),transparent)}
+  #lb .top .row > :not(.close){display:none}
+  #lb .close{font-size:20px;padding:10px 16px}
+  #lb img,#lb video{max-height:calc(100vh - 170px)}
+  #lbbar{display:flex;position:fixed;left:0;right:0;bottom:0;gap:10px;padding:10px 12px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(0,0,0,.75) 35%)}
+}
+#job{position:fixed;left:0;right:0;bottom:0;z-index:20;background:#1c1c1f;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));
+  box-shadow:0 -10px 40px rgba(0,0,0,.6);animation:up .2s ease-out}
+#job.on{display:block}#jobshade{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:19}#jobshade.on{display:block}
+@keyframes up{from{transform:translateY(100%)}}
+#job h3{margin:0 0 4px;font-size:19px}#job .bar{height:8px;margin:14px 0}
+#job .big[disabled]{background:#2a2a2e;color:#aaa}
 </style>{% endblock %}
 {% block body %}
 <div class="hero" {% if cover %}style="background-image:url('/e/{{ token }}/preview/{{ cover|q }}')"{% endif %}><div class="in">
@@ -32,7 +55,7 @@
 <button class="sec" type="button" id="selbtn" onclick="toggleSelect()">Select</button>
 <button class="sec" type="button" id="selall" style="display:none" onclick="selAll()">Select all</button>
 <button type="button" id="dlsel" style="display:none" onclick="dlSelected()">Download selected</button>
-<button type="button" id="savesel" class="savebtn" style="display:none" onclick="saveSelected(this)">📲 Save to Photos</button></span>
+</span>
 <span class="mut" id="selinfo"></span></div>{% else %}<p class="mut">No photos yet. Check back soon.</p>{% endif %}
 
 {% set multi_day = (items|map(attribute="day")|unique|list|length) > 1 %}
@@ -47,10 +70,41 @@
 </div>{% if loop.last %}</div>{% endif %}{% endfor %}</div>
 <form method="post" action="/e/{{ token }}/download.zip" id="selform"></form>
 
+{% if items %}<div id="mbar">
+  <span id="mb-normal" style="display:contents">
+    <button class="sec icon" type="button" onclick="toggleSelect()" title="Select" style="font-size:15px;padding:13px 12px">Select</button>
+    <button class="big save-only" type="button" onclick="saveAll()">📲 Save all to phone</button>
+    <a class="btn sec icon save-only" href="/e/{{ token }}/download.zip" title="Download all as zip">⬇</a>
+    <a class="btn big dl-only" href="/e/{{ token }}/download.zip">⬇ Download all</a>
+  </span>
+  <span id="mb-select" style="display:none">
+    <button class="sec icon" type="button" onclick="toggleSelect()" title="Cancel">✕</button>
+    <button class="sec icon" type="button" onclick="selAll()" title="Select all" style="font-size:14px">All</button>
+    <button class="big save-only" type="button" id="mb-save" onclick="saveSelectedM()" disabled>Tap photos</button>
+    <button class="sec icon save-only" type="button" onclick="if (grid.querySelector('.sel')) dlSelected()" title="Download selected as zip">⬇</button>
+    <button class="big dl-only" type="button" id="mb-dl" onclick="dlSelected()" disabled>Tap photos</button>
+  </span>
+</div>{% endif %}
+
+<div id="jobshade" onclick="cancelJob()"></div>
+<div id="job">
+  <div class="row" style="justify-content:space-between;align-items:flex-start">
+    <div><h3 id="job-title">Save to phone</h3><div class="mut" id="job-sub"></div></div>
+    <button class="sec icon" type="button" onclick="cancelJob()" style="min-width:44px;padding:8px 0">✕</button></div>
+  <div class="bar"><div id="job-prog"></div></div>
+  <button class="big" type="button" id="job-btn" onclick="jobTap()" style="width:100%">…</button>
+  <p class="mut" style="font-size:13px;margin:10px 0 0;text-align:center" id="job-hint">Your phone saves up to 20 at a time. Tap the button for each batch.</p>
+</div>
+
 
 
 <div id="lb"><div class="top"><span id="cap" class="mut"></span>
-<span class="row"><button type="button" id="savelb" class="savebtn" style="display:none" onclick="saveCurrent(this)">📲 Save</button><a id="dl" class="btn">⬇ Download</a><button class="sec" onclick="closeLb()">✕</button></span></div>
+<span class="row"><a id="dl" class="btn">⬇ Download</a><button class="sec close" onclick="closeLb()">✕</button></span></div>
+<div id="lbbar"><button class="sec icon" type="button" onclick="step(-1)">‹</button>
+<button class="big save-only" type="button" onclick="saveCurrent()">📲 Save to phone</button>
+<a class="btn sec icon save-only" id="dl3" title="Download">⬇</a>
+<a class="btn big dl-only" id="dl2">⬇ Download</a>
+<button class="sec icon" type="button" onclick="step(1)">›</button></div>
 <button class="nav" id="prev" onclick="step(-1)">‹</button><div id="media"></div><button class="nav" id="next" onclick="step(1)">›</button></div>
 <script>
 if (sessionStorage.keepY) { const y = +sessionStorage.keepY; delete sessionStorage.keepY; addEventListener('load', () => scrollTo(0, y)); }
@@ -61,7 +115,7 @@ function show(){
   const it = items[cur], n = enc(it.name);
   m.innerHTML = it.video ? `<video src="/e/${tok}/file/${n}" controls autoplay playsinline></video>` : `<img src="/e/${tok}/preview/${n}">`;
   document.getElementById('dl').href = `/e/${tok}/file/${n}?dl=1`;
-  const sb = document.getElementById('savelb'); if (sb && sb.textContent !== '📲 Save') { sb.textContent = '📲 Save'; }
+  for (const id of ['dl2', 'dl3']) { const a = document.getElementById(id); if (a) a.href = `/e/${tok}/file/${n}?dl=1`; }
   document.getElementById('cap').textContent = `${it.when}` + (it.by && who[it.by] ? `  ·  by ${who[it.by]}` : '') + `  ·  ${cur+1} / ${items.length}`;
   for (const d of [1, -1]) { const nb = items[(cur + d + items.length) % items.length]; if (!nb.video) new Image().src = `/e/${tok}/preview/${enc(nb.name)}`; }
 }
@@ -82,10 +136,14 @@ grid.addEventListener('click', e => {
   if (selecting) { it.classList.toggle('sel'); upd(); } else openLb(+it.dataset.i); });
 function toggleSelect(){ selecting = !selecting; grid.classList.toggle('selecting', selecting);
   document.getElementById('selbtn').textContent = selecting ? 'Cancel' : 'Select';
+  const mn = document.getElementById('mb-normal'), ms = document.getElementById('mb-select');
+  if (mn) { mn.style.display = selecting ? 'none' : 'contents'; ms.style.display = selecting ? 'contents' : 'none'; }
   if (!selecting) grid.querySelectorAll('.sel').forEach(e => e.classList.remove('sel')); upd(); }
 function selAll(){ const t = [...grid.querySelectorAll('.it:not(.hid)')], all = t.every(x => x.classList.contains('sel')); t.forEach(x => x.classList.toggle('sel', !all)); upd(); }
 function upd(){ const n = grid.querySelectorAll('.sel').length, b = document.getElementById('dlsel');
-  resetSave(); const sv = document.getElementById('savesel'); sv.style.display = (n && CAN_SAVE) ? '' : 'none';
+  const ms = document.getElementById('mb-save'), md = document.getElementById('mb-dl');
+  if (ms) { ms.disabled = !n; ms.textContent = n ? `📲 Save ${n}` : 'Tap photos'; }
+  if (md) { md.disabled = !n; md.textContent = n ? `⬇ Download ${n}` : 'Tap photos'; }
   document.getElementById('selall').style.display = selecting ? '' : 'none';
   b.style.display = n ? '' : 'none'; b.textContent = `⬇ Download ${n} selected`;
   document.getElementById('selinfo').textContent = selecting ? (n ? '' : 'Tap photos to pick them') : ''; }
@@ -93,53 +151,76 @@ function dlSelected(){ const f = document.getElementById('selform'); f.innerHTML
   grid.querySelectorAll('.sel').forEach(it => { const i = document.createElement('input'); i.type = 'hidden'; i.name = 'names'; i.value = items[+it.dataset.i].name; f.appendChild(i); });
   f.submit(); }
 
-// ---------- Save to Photos (phones): Web Share API with files -> iOS "Save Image(s)", Android "Save to Gallery" ----------
+// ---------- Save to phone: Web Share API with files -> iOS "Save X Images", Android "Save to gallery" ----------
+// iOS needs a fresh tap for every share and copes with ~20 files at a time, so a big save is a series
+// of batches: we download the next batch in the background, then one big button saves it.
 const MIME = {jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', gif:'image/gif', webp:'image/webp', heic:'image/heic',
   heif:'image/heif', tif:'image/tiff', tiff:'image/tiff', bmp:'image/bmp', mp4:'video/mp4', m4v:'video/mp4', mov:'video/quicktime', webm:'video/webm'};
-const BATCH_FILES = 20, BATCH_BYTES = 200 * 1048576;   // iOS gets unreliable beyond roughly this per share
+const BATCH_FILES = 20, BATCH_BYTES = 200 * 1048576;
 const CAN_SAVE = (() => { try { return matchMedia('(pointer:coarse)').matches && !!navigator.canShare &&
   navigator.canShare({files: [new File([new Blob(['x'])], 'x.jpg', {type: 'image/jpeg'})]}); } catch (e) { return false; } })();
-if (CAN_SAVE) document.getElementById('savelb').style.display = '';
-let saveQueue = [], ready = null;   // ready = files fetched but share needs a fresh tap
-function resetSave(){ saveQueue = []; ready = null; const b = document.getElementById('savesel'); if (b) b.textContent = '📲 Save to Photos'; }
+document.querySelectorAll(CAN_SAVE ? '.dl-only' : '.save-only').forEach(e => e.remove());
+const $ = id => document.getElementById(id);
+let job = null;   // {names, pos, saved, ready: File[]|null, loading, gen}
+const visibleNames = sel => [...grid.querySelectorAll('.it:not(.hid)' + (sel ? '.sel' : ''))].map(t => items[+t.dataset.i].name);
 async function fetchFile(name){
   const r = await fetch(`/e/${tok}/file/${enc(name)}`); if (!r.ok) throw new Error(r.status);
-  const ext = name.split('.').pop().toLowerCase(), base = name.split('/').pop();
-  return new File([await r.blob()], base, {type: MIME[ext] || 'application/octet-stream'});
+  const ext = name.split('.').pop().toLowerCase();
+  return new File([await r.blob()], name.split('/').pop(), {type: MIME[ext] || 'application/octet-stream'});
 }
-async function nextBatch(btn){
-  const out = []; let bytes = 0; const n = Math.min(saveQueue.length, BATCH_FILES);
-  while (saveQueue.length && out.length < BATCH_FILES && bytes < BATCH_BYTES) {
-    if (n > 1) btn.textContent = `Preparing ${out.length + 1} of ${n}…`;
-    const f = await fetchFile(saveQueue.shift()); out.push(f); bytes += f.size; }
+function drawJob(){
+  if (!job) return;
+  const total = job.names.length, left = total - job.saved, b = $('job-btn');
+  $('job-title').textContent = job.saved >= total ? 'All saved ✓' : total === 1 ? 'Save to phone' : `Saving ${total} to your phone`;
+  $('job-prog').style.width = (100 * job.saved / total) + '%';
+  $('job-sub').textContent = total === 1 ? '' : `${job.saved} of ${total} saved`;
+  $('job-hint').style.display = total > BATCH_FILES && job.saved < total ? '' : 'none';
+  if (job.saved >= total) { b.disabled = false; b.textContent = 'Done'; return; }
+  if (job.error) { b.disabled = false; b.textContent = 'Try again'; return; }
+  if (job.loading) { b.disabled = true; b.textContent = `Getting ${job.loading.done + 1} of ${job.loading.n}…`; return; }
+  const n = job.ready ? job.ready.length : 0;
+  b.disabled = false;
+  b.textContent = total === 1 ? '📲 Save to phone' : job.saved === 0 ? `📲 Save ${n === left ? 'all ' : ''}${n}` : `📲 Save next ${n}` + (left > n ? ` (${left} left)` : '');
+}
+async function loadBatch(){
+  const gen = job.gen, out = []; let bytes = 0;
+  const n = Math.min(job.names.length - job.pos, BATCH_FILES);
+  job.ready = null; job.error = false; job.loading = {done: 0, n}; drawJob();
+  try {
+    while (job && job.gen === gen && job.pos < job.names.length && out.length < BATCH_FILES && bytes < BATCH_BYTES) {
+      const f = await fetchFile(job.names[job.pos]); if (!job || job.gen !== gen) return;
+      out.push(f); bytes += f.size; job.pos++; job.loading.done = out.length; drawJob(); }
+  } catch (e) { if (job && job.gen === gen) { job.pos -= out.length; job.error = true; job.loading = null; drawJob(); } return; }
+  if (!job || job.gen !== gen) return;
+  job.loading = null; job.ready = out; drawJob();
   return out;
 }
-async function share(files, btn, label){
-  try { await navigator.share({files}); return true; }
-  catch (e) {
-    if (e.name === 'NotAllowedError') { ready = files; btn.textContent = 'Ready. Tap to save'; return false; }  // tap expired while downloading
-    if (e.name !== 'AbortError') alert("Couldn't open the save menu. Use Download instead.");
-    btn.textContent = label; return false;
-  }
+async function shareReady(){
+  const files = job.ready;
+  if (!navigator.canShare({files})) { toastMsg("Your phone can't save these here. Try Download instead."); return; }
+  try { await navigator.share({files}); }
+  catch (e) { if (e.name !== 'AbortError' && e.name !== 'NotAllowedError') toastMsg("Couldn't open the save menu, try again."); drawJob(); return; }
+  job.saved += files.length; job.ready = null; drawJob();
+  if (job.saved < job.names.length) loadBatch();          // get the next batch ready while they look at the result
+  else setTimeout(() => { if (job && job.saved >= job.names.length) cancelJob(); }, 1600);
 }
-async function runSave(btn, label){
-  if (ready) { const f = ready; ready = null; btn.textContent = label; if (!await share(f, btn, label)) return; }
-  else {
-    btn.textContent = 'Preparing…';
-    let files; try { files = await nextBatch(btn); } catch (e) { btn.textContent = label; alert('Download failed, try again.'); return; }
-    if (!navigator.canShare({files})) { btn.textContent = label; alert('Your phone can\'t save these here. Use Download instead.'); return; }
-    if (!await share(files, btn, label)) return;
-  }
-  btn.textContent = saveQueue.length ? `📲 Save next ${Math.min(saveQueue.length, BATCH_FILES)} (${saveQueue.length} left)` : '✓ Saved';
-  if (!saveQueue.length) setTimeout(() => { btn.textContent = label; }, 2500);
+function toastMsg(m){ window.toast ? toast(m, true) : alert(m); }
+async function startJob(names){
+  if (!names.length) return;
+  job = {names, pos: 0, saved: 0, ready: null, loading: null, gen: Math.random()};
+  $('job').classList.add('on'); $('jobshade').classList.add('on'); drawJob();
+  const got = await loadBatch();
+  if (got && job && job.ready) { try { await shareReady(); } catch (e) {} }   // works if the tap is still "fresh"; otherwise the big button does it
 }
-function saveSelected(btn){
-  if (!saveQueue.length && !ready) saveQueue = [...grid.querySelectorAll('.sel')].map(t => items[+t.dataset.i].name);
-  runSave(btn, '📲 Save to Photos');
+function jobTap(){
+  if (!job) return;
+  if (job.saved >= job.names.length) return cancelJob();
+  if (job.error) return loadBatch();
+  if (job.ready) shareReady();
 }
-function saveCurrent(btn){
-  if (!ready || ready[0].name !== items[cur].name.split('/').pop()) { ready = null; saveQueue = [items[cur].name]; }
-  runSave(btn, '📲 Save');
-}
+function cancelJob(){ job = null; $('job').classList.remove('on'); $('jobshade').classList.remove('on'); }
+function saveAll(){ startJob(visibleNames(false)); }
+function saveSelectedM(){ const n = visibleNames(true); startJob(n); }
+function saveCurrent(){ startJob([items[cur].name]); }
 </script>
 {% endblock %}
