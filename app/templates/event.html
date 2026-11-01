@@ -41,7 +41,7 @@
 #job .big[disabled]{background:#2a2a2e;color:#aaa}
 </style>{% endblock %}
 {% block body %}
-<div class="hero" {% if cover %}style="background-image:url('/e/{{ token }}/preview/{{ cover|q }}')"{% endif %}><div class="in">
+<div class="hero" {% if cover %}style="background-image:url('/e/{{ token }}/preview/{{ cover.name|q }}?v={{ cover.v }}')"{% endif %}><div class="in">
 <h1 style="font-size:30px">{{ ev.name }}</h1>
 <div class="mut" style="color:#ddd">{% if ev.date %}{{ ev.date|nicedate }} · {% endif %}{{ items|length }} photos</div>
 {% if ev.description %}<p style="margin:8px 0 0;white-space:pre-line">{{ ev.description }}</p>{% endif %}
@@ -66,8 +66,8 @@
 <div class="grid">{% endif %}
 <div class="it {% if it.video %}vid{% endif %}" data-i="{{ loop.index0 }}" data-day="{{ it.day }}" data-by="{{ it.by }}">
 {% if it.by and ev.uploaders.get(it.by) %}<span class="byb" style="--c:{{ ev.uploaders[it.by].colour }}" title="{{ ev.uploaders[it.by].name }}"></span>{% endif %}
-{% if it.video %}<video src="/e/{{ token }}/file/{{ it.name|q }}#t=0.1" preload="metadata" muted playsinline></video>
-{% else %}<img loading="lazy" src="/e/{{ token }}/thumb/{{ it.name|q }}" alt="">{% endif %}<span class="chk"></span><span class="tm">{{ it.time }}</span>
+{% if it.video %}<video src="/e/{{ token }}/file/{{ it.name|q }}?v={{ it.v }}#t=0.1" preload="metadata" muted playsinline></video>
+{% else %}<img loading="lazy" decoding="async" src="/e/{{ token }}/thumb/{{ it.name|q }}?v={{ it.v }}" alt="">{% endif %}<span class="chk"></span><span class="tm">{{ it.time }}</span>
 </div>{% if loop.last %}</div>{% endif %}{% endfor %}</div>
 <form method="post" action="/e/{{ token }}/download.zip" id="selform"></form>
 
@@ -114,11 +114,11 @@ const who = Object.fromEntries(({{ (legend or [])|tojson }}).map(l => [l.id, l.n
 let cur = 0, selecting = false; const lb = document.getElementById('lb'), m = document.getElementById('media'), grid = document.getElementById('grid');
 function show(){
   const it = items[cur], n = enc(it.name);
-  m.innerHTML = it.video ? `<video src="/e/${tok}/file/${n}" controls autoplay playsinline></video>` : `<img src="/e/${tok}/preview/${n}">`;
+  m.innerHTML = it.video ? `<video src="/e/${tok}/file/${n}?v=${it.v}" controls autoplay playsinline></video>` : `<img src="/e/${tok}/preview/${n}?v=${it.v}">`;
   document.getElementById('dl').href = `/e/${tok}/file/${n}?dl=1`;
   for (const id of ['dl2', 'dl3']) { const a = document.getElementById(id); if (a) a.href = `/e/${tok}/file/${n}?dl=1`; }
   document.getElementById('cap').textContent = `${it.when}` + (it.by && who[it.by] ? `  ·  by ${who[it.by]}` : '') + `  ·  ${cur+1} / ${items.length}`;
-  for (const d of [1, -1]) { const nb = items[(cur + d + items.length) % items.length]; if (!nb.video) new Image().src = `/e/${tok}/preview/${enc(nb.name)}`; }
+  for (const d of [1, -1]) { const nb = items[(cur + d + items.length) % items.length]; if (!nb.video) new Image().src = `/e/${tok}/preview/${enc(nb.name)}?v=${nb.v}`; }
 }
 function openLb(i){ cur = i; show(); lb.classList.add('on'); document.body.style.overflow = 'hidden'; }
 function closeLb(){ lb.classList.remove('on'); m.innerHTML = ''; document.body.style.overflow = ''; }
@@ -157,71 +157,89 @@ function dlSelected(){ const f = document.getElementById('selform'); f.innerHTML
 // of batches: we download the next batch in the background, then one big button saves it.
 const MIME = {jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', gif:'image/gif', webp:'image/webp', heic:'image/heic',
   heif:'image/heif', tif:'image/tiff', tiff:'image/tiff', bmp:'image/bmp', mp4:'video/mp4', m4v:'video/mp4', mov:'video/quicktime', webm:'video/webm'};
-const BATCH_FILES = 20, BATCH_BYTES = 200 * 1048576;
+const BATCH_FILES = 20, BATCH_BYTES = 150 * 1048576;   // iOS copes with about this much per share
 const CAN_SAVE = (() => { try { return matchMedia('(pointer:coarse)').matches && !!navigator.canShare &&
   navigator.canShare({files: [new File([new Blob(['x'])], 'x.jpg', {type: 'image/jpeg'})]}); } catch (e) { return false; } })();
 document.querySelectorAll(CAN_SAVE ? '.dl-only' : '.save-only').forEach(e => e.remove());
 const $ = id => document.getElementById(id);
-let job = null;   // {names, pos, saved, ready: File[]|null, loading, gen}
-const visibleNames = sel => [...grid.querySelectorAll('.it:not(.hid)' + (sel ? '.sel' : ''))].map(t => items[+t.dataset.i].name);
-async function fetchFile(name){
-  const r = await fetch(`/e/${tok}/file/${enc(name)}`); if (!r.ok) throw new Error(r.status);
-  const ext = name.split('.').pop().toLowerCase();
-  return new File([await r.blob()], name.split('/').pop(), {type: MIME[ext] || 'application/octet-stream'});
+const PARALLEL = 4;   // originals downloaded at once
+// A save job is split into batches up front (we know every file's size). While the share sheet for
+// one batch is open, the next batch is already downloading, so each "Save next" is ready right away.
+let job = null;
+const visibleItems = sel => [...grid.querySelectorAll('.it:not(.hid)' + (sel ? '.sel' : ''))].map(t => items[+t.dataset.i]);
+async function fetchFile(it){
+  const r = await fetch(`/e/${tok}/file/${enc(it.name)}?v=${it.v}`); if (!r.ok) throw new Error(r.status);
+  const ext = it.name.split('.').pop().toLowerCase();
+  return new File([await r.blob()], it.name.split('/').pop(), {type: MIME[ext] || 'application/octet-stream'});
+}
+function plan(list){
+  const out = []; let cur = [], bytes = 0;
+  for (const it of list) {
+    if (cur.length && (cur.length >= BATCH_FILES || bytes + it.size > BATCH_BYTES)) { out.push(cur); cur = []; bytes = 0; }
+    cur.push(it); bytes += it.size || 0;
+  }
+  if (cur.length) out.push(cur);
+  return out.map(items => ({items, files: null, done: 0, promise: null, error: false}));
+}
+function prefetch(k){
+  const b = job && job.batches[k]; if (!b || b.promise || b.files) return;
+  const gen = job.gen, files = new Array(b.items.length); let next = 0;
+  b.error = false; b.done = 0;
+  const worker = async () => { while (next < b.items.length) { const i = next++;
+    files[i] = await fetchFile(b.items[i]); if (!job || job.gen !== gen) return; b.done++; drawJob(); } };
+  b.promise = Promise.all(Array.from({length: Math.min(PARALLEL, b.items.length)}, worker))
+    .then(() => { if (job && job.gen === gen) { b.files = files; b.promise = null; drawJob(); } })
+    .catch(() => { if (job && job.gen === gen) { b.error = true; b.promise = null; drawJob(); } });
+  return b.promise;
 }
 function drawJob(){
   if (!job) return;
-  const total = job.names.length, left = total - job.saved, b = $('job-btn');
+  const total = job.total, b = $('job-btn'), cur = job.batches[job.k];
   $('job-title').textContent = job.saved >= total ? (total === 1 ? 'Saved to Photos' : `All ${total} saved to Photos`) : total === 1 ? 'Save to Photos' : `Save ${total} to Photos`;
   $('job-prog').style.width = (100 * job.saved / total) + '%';
-  $('job-sub').textContent = total === 1 ? '' : `${job.saved} of ${total} saved` + (total - job.saved > 0 && job.saved > 0 ? ` · ${total - job.saved} to go` : '');
-  $('job-hint').style.display = total > BATCH_FILES && job.saved < total ? '' : 'none';
-  if (job.saved >= total) { b.disabled = false; b.innerHTML = `${IC.check} Done`; return; }
-  if (job.error) { b.disabled = false; b.textContent = 'Try again'; return; }
-  if (job.loading) { b.disabled = true; b.textContent = job.loading.n === 1 ? 'Preparing…' : `Preparing ${job.loading.done + 1} of ${job.loading.n}…`; return; }
-  const n = job.ready ? job.ready.length : 0;
-  b.disabled = false;
-  b.innerHTML = IC.photos + ' ' + (total === 1 ? 'Save to Photos' : job.saved === 0 ? (n === left ? `Save ${n} to Photos` : `Save first ${n}`) : `Save next ${n}`);
+  $('job-sub').textContent = total === 1 ? '' : `${job.saved} of ${total} saved` + (job.saved && job.saved < total ? ` · ${total - job.saved} to go` : '');
+  $('job-hint').style.display = job.batches.length > 1 && job.saved < total ? '' : 'none';
+  if (!cur) { b.disabled = false; b.innerHTML = `${IC.check} Done`; return; }
+  if (cur.error) { b.disabled = false; b.textContent = 'Download failed. Try again'; return; }
+  if (job.sharing) { b.disabled = true; b.textContent = 'Saving…'; return; }
+  if (!cur.files) { const n = cur.items.length; b.disabled = true;
+    b.textContent = n === 1 ? 'Preparing…' : `Preparing ${Math.min(cur.done + 1, n)} of ${n}…`; return; }
+  const n = cur.files.length; b.disabled = false;
+  b.innerHTML = IC.photos + ' ' + (total === 1 ? 'Save to Photos' : job.k === 0 ? (job.batches.length === 1 ? `Save ${n} to Photos` : `Save first ${n}`) : `Save next ${n}`);
 }
-async function loadBatch(){
-  const gen = job.gen, out = []; let bytes = 0;
-  const n = Math.min(job.names.length - job.pos, BATCH_FILES);
-  job.ready = null; job.error = false; job.loading = {done: 0, n}; drawJob();
-  try {
-    while (job && job.gen === gen && job.pos < job.names.length && out.length < BATCH_FILES && bytes < BATCH_BYTES) {
-      const f = await fetchFile(job.names[job.pos]); if (!job || job.gen !== gen) return;
-      out.push(f); bytes += f.size; job.pos++; job.loading.done = out.length; drawJob(); }
-  } catch (e) { if (job && job.gen === gen) { job.pos -= out.length; job.error = true; job.loading = null; drawJob(); } return; }
-  if (!job || job.gen !== gen) return;
-  job.loading = null; job.ready = out; drawJob();
-  return out;
-}
-async function shareReady(){
-  const files = job.ready;
-  if (!navigator.canShare({files})) { toastMsg("Your phone can't save these here. Try Download instead."); return; }
+async function shareCurrent(){
+  const cur = job.batches[job.k], files = cur.files, gen = job.gen;
+  if (job.sharing) return false;
+  if (!navigator.canShare({files})) { toastMsg("Your phone can't save these here. Try Download instead."); return false; }
+  prefetch(job.k + 1);                       // start the next batch while the share sheet is open
+  job.sharing = true; drawJob();
   try { await navigator.share({files}); }
-  catch (e) { if (e.name !== 'AbortError' && e.name !== 'NotAllowedError') toastMsg("Couldn't open the save menu, try again."); drawJob(); return; }
-  job.saved += files.length; job.ready = null; drawJob();
-  if (job.saved < job.names.length) loadBatch();          // get the next batch ready while they look at the result
-  else setTimeout(() => { if (job && job.saved >= job.names.length) cancelJob(); }, 1600);
+  catch (e) { if (job) job.sharing = false; if (e.name !== 'AbortError' && e.name !== 'NotAllowedError') toastMsg("Couldn't open the save menu, try again."); drawJob(); return false; }
+  if (!job || job.gen !== gen) return true;
+  job.sharing = false;
+  job.saved += files.length; cur.files = null; job.k++;   // drop saved files from memory
+  prefetch(job.k); drawJob();
+  if (job.saved >= job.total) setTimeout(() => { if (job && job.saved >= job.total) cancelJob(); }, 1600);
+  return true;
 }
 function toastMsg(m){ window.toast ? toast(m, true) : alert(m); }
-async function startJob(names){
-  if (!names.length) return;
-  job = {names, pos: 0, saved: 0, ready: null, loading: null, gen: Math.random()};
+async function startJob(list){
+  if (!list.length) return;
+  job = {batches: plan(list), total: list.length, k: 0, saved: 0, gen: Math.random()};
   $('job').classList.add('on'); $('jobshade').classList.add('on'); drawJob();
-  const got = await loadBatch();
-  if (got && job && job.ready) { try { await shareReady(); } catch (e) {} }   // works if the tap is still "fresh"; otherwise the big button does it
+  await prefetch(0);
+  if (job && job.batches[0] && job.batches[0].files) { try { await shareCurrent(); } catch (e) {} }  // works if the tap is still "fresh"; otherwise the big button does it
 }
 function jobTap(){
   if (!job) return;
-  if (job.saved >= job.names.length) return cancelJob();
-  if (job.error) return loadBatch();
-  if (job.ready) shareReady();
+  const cur = job.batches[job.k];
+  if (!cur) return cancelJob();
+  if (cur.error) return prefetch(job.k);
+  if (cur.files) shareCurrent();
 }
 function cancelJob(){ job = null; $('job').classList.remove('on'); $('jobshade').classList.remove('on'); }
-function saveAll(){ startJob(visibleNames(false)); }
-function saveSelectedM(){ const n = visibleNames(true); startJob(n); }
-function saveCurrent(){ startJob([items[cur].name]); }
+function saveAll(){ startJob(visibleItems(false)); }
+function saveSelectedM(){ startJob(visibleItems(true)); }
+function saveCurrent(){ startJob([items[cur]]); }
 </script>
 {% endblock %}

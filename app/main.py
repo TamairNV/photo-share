@@ -552,10 +552,23 @@ def gallery_items(slug, ev):
         t = datetime.fromtimestamp(i["taken"])
         items.append({"name": i["name"], "video": i["video"], "by": i["by"], "day": t.strftime("%Y-%m-%d"),
                       "dayLabel": t.strftime("%A %-d %B %Y"), "time": t.strftime("%H:%M"),
-                      "when": t.strftime("%-d %b %Y, %H:%M")})
-    cover = ev["cover"] if any(i["name"] == ev["cover"] and not i["video"] for i in items) else \
-        next((i["name"] for i in items if not i["video"]), "")
+                      "when": t.strftime("%-d %b %Y, %H:%M"), "v": int(i["mtime"]), "size": i["size"]})
+    cover = next((i for i in items if i["name"] == ev["cover"] and not i["video"]), None) or \
+        next((i for i in items if not i["video"]), None)
     return items, cover
+
+
+class BigFileResponse(FileResponse):
+    chunk_size = 1 << 20  # 1MB reads instead of 64KB: fewer syscalls/awaits per big original
+
+
+def media_cache(ev):
+    """URLs carry ?v=<mtime>, so a given URL never changes content. Public events let Cloudflare's edge
+    keep a copy for a day (s-maxage) so repeat views/saves come from the edge, not your home upload;
+    password-protected events stay browser-only."""
+    if ev.get("password"):
+        return {"Cache-Control": "private, max-age=31536000, immutable"}
+    return {"Cache-Control": "public, max-age=31536000, s-maxage=86400, immutable"}
 
 
 def guest_event(request, token):
@@ -608,24 +621,27 @@ def unlock(request: Request, token: str, password: str = Form(...)):
 
 @app.get("/e/{token}/thumb/{name:path}")
 def thumb(request: Request, token: str, name: str):
-    slug, _ = guest_event(request, token)
-    return FileResponse(resized(slug, name, "thumb"), headers={"Cache-Control": "private, max-age=86400"})
+    slug, ev = guest_event(request, token)
+    return BigFileResponse(resized(slug, name, "thumb"), headers=media_cache(ev))
 
 
 @app.get("/e/{token}/preview/{name:path}")
 def preview(request: Request, token: str, name: str):
-    slug, _ = guest_event(request, token)
-    return FileResponse(resized(slug, name, "preview"), headers={"Cache-Control": "private, max-age=86400"})
+    slug, ev = guest_event(request, token)
+    return BigFileResponse(resized(slug, name, "preview"), headers=media_cache(ev))
 
 
 @app.get("/e/{token}/file/{name:path}")
 def original(request: Request, token: str, name: str, dl: int = 0):
-    slug, _ = guest_event(request, token)
+    slug, ev = guest_event(request, token)
     p = get_file(slug, name)
-    if dl and not request.session.get("admin"):
-        bump(slug, "downloads")
-    return FileResponse(p, filename=p.name if dl else None,
-                        content_disposition_type="attachment" if dl else "inline")
+    if dl:
+        if not request.session.get("admin"):
+            bump(slug, "downloads")
+        # not edge-cached so the download counter stays right
+        return BigFileResponse(p, filename=p.name, content_disposition_type="attachment",
+                               headers={"Cache-Control": "private, max-age=3600"})
+    return BigFileResponse(p, headers=media_cache(ev))  # supports Range requests (video seeking, resumes)
 
 
 @app.get("/e/{token}/download.zip")
@@ -870,7 +886,7 @@ def delete_event(request: Request, slug: str, confirm: str = Form(""), csrf: str
 @app.get("/admin/events/{slug}/thumb/{name:path}")
 def admin_thumb(request: Request, slug: str, name: str):
     require_admin(request)
-    return FileResponse(resized(slug, name, "thumb"))
+    return BigFileResponse(resized(slug, name, "thumb"), headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
 @app.get("/healthz")

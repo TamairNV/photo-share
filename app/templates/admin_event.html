@@ -58,8 +58,8 @@
 <div class="grid" id="grid" data-live="grid">{% for it in items %}
 <div class="it {% if it.video %}vid{% endif %}" data-name="{{ it.name }}" data-by="{{ it.by }}" title="{{ it.name }} · {{ it.size|size }}">
 {% if it.by and colours.get(it.by) %}<span class="byb" style="--c:{{ colours[it.by] }}"></span>{% endif %}
-{% if it.video %}<video src="/e/{{ ev.token }}/file/{{ it.name|q }}#t=0.1" preload="metadata" muted></video>
-{% else %}<img loading="lazy" src="/admin/events/{{ slug }}/thumb/{{ it.name|q }}" alt="">{% endif %}
+{% if it.video %}<video src="/e/{{ ev.token }}/file/{{ it.name|q }}?v={{ it.mtime|int }}#t=0.1" preload="metadata" muted></video>
+{% else %}<img loading="lazy" decoding="async" src="/admin/events/{{ slug }}/thumb/{{ it.name|q }}?v={{ it.mtime|int }}" alt="">{% endif %}
 <span class="chk"></span>
 {% if not it.video %}<form method="post" action="/admin/events/{{ slug }}/cover" style="position:absolute;bottom:6px;right:6px" class="tilebtn">
 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="name" value="{{ it.name }}">
