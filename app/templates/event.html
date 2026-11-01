@@ -19,6 +19,10 @@
 #mbar,#job,#lbbar{display:none}
 .big{flex:1;font-size:17px;font-weight:600;padding:14px 10px;min-height:52px;border-radius:14px;text-align:center;white-space:nowrap}
 #mb-select .big{font-size:16px}
+#mbar{min-width:0}#mbar .big{min-width:0;overflow:hidden;text-overflow:ellipsis;padding-left:8px;padding-right:8px}
+#mbar .tb{flex:none}
+@media (max-width:400px){ #mbar{gap:4px;padding-left:8px;padding-right:8px} #mbar .tb{min-width:50px;padding:4px 2px} }
+@media (max-width:340px){ #mbar .big .ico{display:none} }
 .icon{min-width:54px;font-size:20px;padding:13px 0;border-radius:14px;text-align:center}
 @media (pointer:coarse){
   .tools{display:none}
@@ -74,7 +78,7 @@
 {% if items %}<div id="mbar">
   <span id="mb-normal" style="display:contents">
     <button class="tb" type="button" onclick="toggleSelect()">{{ i('select', 24) }}Select</button>
-    <button class="big save-only" type="button" onclick="saveAll()">{{ i('photos', 22) }} Save all to Photos</button>
+    <button class="big save-only" type="button" onclick="saveAll()">{{ i('photos', 22) }} <span>Save all<span class="opt">&nbsp;to Photos</span></span></button>
     <a class="btn big dl-only" href="/e/{{ token }}/download.zip">{{ i('download', 22) }} Download all</a>
     <a class="btn tb save-only" href="/e/{{ token }}/download.zip">{{ i('download', 24) }}ZIP file</a>
   </span>
@@ -140,10 +144,14 @@ function toggleSelect(){ selecting = !selecting; grid.classList.toggle('selectin
   const mn = document.getElementById('mb-normal'), ms = document.getElementById('mb-select');
   if (mn) { mn.style.display = selecting ? 'none' : 'contents'; ms.style.display = selecting ? 'contents' : 'none'; }
   if (!selecting) grid.querySelectorAll('.sel').forEach(e => e.classList.remove('sel')); upd(); }
+// drop the optional words from the main bar button if they don't fit this screen
+function fitBar(){ document.querySelectorAll('#mbar .big').forEach(b => { b.querySelectorAll('.opt').forEach(o => o.style.display = '');
+  if (b.scrollWidth > b.clientWidth + 1) b.querySelectorAll('.opt').forEach(o => o.style.display = 'none'); }); }
+addEventListener('resize', fitBar);
 function selAll(){ const t = [...grid.querySelectorAll('.it:not(.hid)')], all = t.every(x => x.classList.contains('sel')); t.forEach(x => x.classList.toggle('sel', !all)); upd(); }
 function upd(){ const n = grid.querySelectorAll('.sel').length, b = document.getElementById('dlsel');
   const ms = document.getElementById('mb-save'), md = document.getElementById('mb-dl');
-  if (ms) { ms.disabled = !n; ms.innerHTML = n ? `${IC.photos} Save ${n} to Photos` : 'Tap photos to pick'; }
+  if (ms) { ms.disabled = !n; ms.innerHTML = n ? `${IC.photos} <span>Save ${n}<span class="opt">&nbsp;to Photos</span></span>` : 'Tap to pick'; fitBar(); }
   if (md) { md.disabled = !n; md.innerHTML = n ? `${IC.download} Download ${n}` : 'Tap photos to pick'; }
   document.getElementById('selall').style.display = selecting ? '' : 'none';
   b.style.display = n ? '' : 'none'; b.innerHTML = `${IC.download} Download ${n} selected (ZIP)`;
@@ -241,5 +249,6 @@ function cancelJob(){ job = null; $('job').classList.remove('on'); $('jobshade')
 function saveAll(){ startJob(visibleItems(false)); }
 function saveSelectedM(){ startJob(visibleItems(true)); }
 function saveCurrent(){ startJob([items[cur]]); }
+fitBar();
 </script>
 {% endblock %}
