@@ -7,7 +7,7 @@ from urllib.parse import quote
 import jwt
 import segno
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, StreamingResponse, Response
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse, FileResponse, StreamingResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from PIL import Image, ImageOps
@@ -470,6 +470,13 @@ def require_admin(request):
     raise HTTPException(303, headers={"Location": "/admin/login"})
 
 
+def done(request, url, msg="Done", **data):
+    """Form posts from the admin page come in via fetch (x-ajax header) and get JSON; plain posts get a redirect."""
+    if request.headers.get("x-ajax"):
+        return JSONResponse({"ok": True, "msg": msg, **data})
+    return RedirectResponse(url, 303)
+
+
 def check_csrf(request, token):
     if not token or not secrets.compare_digest(token, request.session.get("csrf", "")):
         raise HTTPException(403, "bad csrf token")
@@ -739,7 +746,7 @@ def rescan(request: Request, slug: str, csrf: str = Form("")):
     for n in todo:
         _pool.submit(pregenerate, slug, n)
     clean_stale_uploads()
-    return RedirectResponse(f"/admin/events/{slug}?rescanned={len(todo)}", 303)
+    return done(request, f"/admin/events/{slug}?rescanned={len(todo)}", f"Rescanned. Building {len(todo)} new thumbnails" if todo else "Rescanned. Everything is up to date")
 
 
 @app.post("/admin/events/{slug}/uploaders")
@@ -754,7 +761,7 @@ def add_uploader(request: Request, slug: str, name: str = Form(...), csrf: str =
         ups[secrets.token_hex(4)] = {"name": name.strip()[:40] or "Uploader", "colour": colour,
                                      "token": secrets.token_urlsafe(12), "created": time.time(), "revoked": False}
     update_event(slug, apply)
-    return RedirectResponse(f"/admin/events/{slug}#uploaders", 303)
+    return done(request, f"/admin/events/{slug}#uploaders", f"Upload link for {name.strip()[:40]} created")
 
 
 @app.post("/admin/events/{slug}/uploaders/{uid}/revoke")
@@ -764,7 +771,7 @@ def revoke_uploader(request: Request, slug: str, uid: str, csrf: str = Form(""))
     get_event(slug)
     update_event(slug, lambda ev: ev.get("uploaders", {}).get(uid, {}).__setitem__("revoked", True)
                  if uid in ev.get("uploaders", {}) else None)
-    return RedirectResponse(f"/admin/events/{slug}#uploaders", 303)
+    return done(request, f"/admin/events/{slug}#uploaders", "Upload link turned off")
 
 
 @app.post("/admin/events/{slug}/delete-photos")
@@ -778,7 +785,8 @@ def delete_photos(request: Request, slug: str, names: list[str] = Form(...), csr
         p.unlink()
         drop_cache(slug, n)
         set_source(slug, n, "")
-    return RedirectResponse(f"/admin/events/{slug}", 303)
+    k = len(names)
+    return done(request, f"/admin/events/{slug}", f"Deleted {k} item{'s' if k != 1 else ''}")
 
 
 @app.post("/admin/events/{slug}/cover")
@@ -786,7 +794,7 @@ def set_cover(request: Request, slug: str, name: str = Form(...), csrf: str = Fo
     require_admin(request); check_csrf(request, csrf)
     get_file(slug, name)
     update_event(slug, lambda ev: ev.__setitem__("cover", name))
-    return RedirectResponse(f"/admin/events/{slug}", 303)
+    return done(request, f"/admin/events/{slug}", "Cover photo set")
 
 
 @app.post("/admin/events/{slug}/settings")
@@ -811,7 +819,7 @@ def event_settings(request: Request, slug: str, name: str = Form(...), descripti
             ev["token"] = secrets.token_urlsafe(12)
     get_event(slug)
     update_event(slug, apply)
-    return RedirectResponse(f"/admin/events/{slug}?saved=1", 303)
+    return done(request, f"/admin/events/{slug}?saved=1", "Saved")
 
 
 @app.post("/admin/events/{slug}/delete")

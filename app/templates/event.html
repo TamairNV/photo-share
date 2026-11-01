@@ -53,6 +53,7 @@
 <span class="row"><button type="button" id="savelb" class="savebtn" style="display:none" onclick="saveCurrent(this)">📲 Save</button><a id="dl" class="btn">⬇ Download</a><button class="sec" onclick="closeLb()">✕</button></span></div>
 <button class="nav" id="prev" onclick="step(-1)">‹</button><div id="media"></div><button class="nav" id="next" onclick="step(1)">›</button></div>
 <script>
+if (sessionStorage.keepY) { const y = +sessionStorage.keepY; delete sessionStorage.keepY; addEventListener('load', () => scrollTo(0, y)); }
 const items = {{ items|tojson }}, tok = {{ token|tojson }}, enc = n => encodeURIComponent(n);
 const who = Object.fromEntries(({{ (legend or [])|tojson }}).map(l => [l.id, l.name]));
 let cur = 0, selecting = false; const lb = document.getElementById('lb'), m = document.getElementById('media'), grid = document.getElementById('grid');

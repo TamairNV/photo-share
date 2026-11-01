@@ -39,7 +39,7 @@ async function send(list){
   await Promise.all(Array.from({length: PAR}, worker));
   window.onbeforeunload = null;
   st.innerHTML = `<span class="ok">✓ ${ok} uploaded</span>` + (bad ? ` · <span style="color:var(--bad)">${bad} failed</span>` : '');
-  setTimeout(() => location.reload(), 900);
+  setTimeout(() => { if (window.refreshLive) { refreshLive(); wrap.style.display = 'none'; } else { sessionStorage.keepY = scrollY; location.reload(); } }, 700);
 }
 document.getElementById('pick').onchange = e => send(e.target.files);
 const d = document.getElementById('drop');

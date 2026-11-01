@@ -4,14 +4,14 @@
 {% for l in legend %}<button type="button" class="chip" data-by="{{ l.id }}"><span class="dot" style="background:{{ l.colour }}"></span>{{ l.name }} <span class="mut">{{ l.count }}</span></button>{% endfor %}
 </div>
 <script>
-(() => {
-  const lg = document.getElementById('legend');
-  lg.addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return;
-    lg.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === c));
+if (!window.__legendBound) { window.__legendBound = true;
+  window.applyLegend = () => { const on = document.querySelector('#legend .chip.on'); if (on && on.dataset.by !== '*') on.click(); };
+  document.addEventListener('click', e => { const c = e.target.closest('#legend .chip'); if (!c) return;
+    document.querySelectorAll('#legend .chip').forEach(x => x.classList.toggle('on', x === c));
     const by = c.dataset.by;
     document.querySelectorAll('.it[data-by]').forEach(t => t.classList.toggle('hid', by !== '*' && t.dataset.by !== by));
     document.querySelectorAll('.grid').forEach(g => { const empty = !g.querySelector('.it:not(.hid)');
       g.style.display = empty ? 'none' : ''; const d = g.previousElementSibling; if (d && d.classList.contains('day')) d.style.display = empty ? 'none' : ''; });
   });
-})();
+}
 </script>{% endif %}

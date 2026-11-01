@@ -1,14 +1,12 @@
 {% extends "base.html" %}{% block title %}{{ ev.name }} · Admin{% endblock %}{% block body %}
-<header><div><a href="/admin">← Events</a><h1>{{ ev.name }}</h1>
+<header><div data-live="head"><a href="/admin">← Events</a><h1>{{ ev.name }}</h1>
 <span class="mut">{{ items|length }} items · {{ total|size }} · 👁 {{ ev.views }} views · ⬇ {{ ev.downloads }} downloads</span></div>
 <a class="btn sec" href="/e/{{ ev.token }}" target="_blank">View as guest</a></header>
 
-{% if saved %}<p class="ok">✓ Saved</p>{% endif %}
-{% if rescanned %}<p class="ok">✓ Rescanned. Building {{ rescanned }} new thumbnails in the background.</p>
-{% elif missing_thumbs %}<p class="mut">{{ missing_thumbs }} thumbnails not built yet. They build on first view, or hit Rescan below.</p>{% endif %}
+<div data-live="notice">{% if missing_thumbs %}<p class="mut">{{ missing_thumbs }} thumbnails not built yet. They build on first view, or hit Rescan below.</p>{% endif %}</div>
 
-<div class="card row" style="align-items:flex-start;gap:18px">
-<img src="/admin/events/{{ slug }}/qr.svg" alt="QR code" style="width:120px;height:120px;border-radius:8px;background:#fff">
+<div class="card row" style="align-items:flex-start;gap:18px" data-live="share">
+<img src="/admin/events/{{ slug }}/qr.svg?v={{ ev.token }}" alt="QR code" style="width:120px;height:120px;border-radius:8px;background:#fff">
 <div style="flex:1;min-width:240px">
 <div class="row" style="margin-bottom:8px"><b>Share link:</b> <code id="url">{{ url }}</code>
 <button class="sec" onclick="copyText('url', this)">Copy</button>
@@ -20,7 +18,7 @@
 </div></div>
 
 <h2 id="uploaders">Uploader links</h2>
-<div class="card">
+<div class="card" data-live="uploaders">
 <p class="mut" style="margin-top:0">Give someone their own link so they can add photos. The normal share link stays view-only. Everything they upload gets their colour.</p>
 {% for u in uploaders %}<div class="row" style="margin-bottom:8px">
 <span class="dot" style="background:{{ u.colour }};width:14px;height:14px"></span><b style="min-width:90px">{{ u.name }}</b>
@@ -52,12 +50,12 @@
 <form method="post" action="/admin/events/{{ slug }}/rescan" style="margin-top:10px"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="sec">↻ Rescan folder</button></form>
 </div>
 
-<h2 class="row" style="justify-content:space-between">Photos ({{ items|length }})
+<h2 class="row" style="justify-content:space-between"><span data-live="count">Photos ({{ items|length }})</span>
 <span class="row" style="font-size:15px;font-weight:normal">
 <button class="sec" type="button" id="selbtn" onclick="toggleSelect()">Select</button>
 <button class="bad" type="button" id="delbtn" style="display:none" onclick="bulkDelete()">Delete selected</button></span></h2>
-{% include "_legend.html" %}
-<div class="grid" id="grid">{% for it in items %}
+<div data-live="legend">{% include "_legend.html" %}</div>
+<div class="grid" id="grid" data-live="grid">{% for it in items %}
 <div class="it {% if it.video %}vid{% endif %}" data-name="{{ it.name }}" data-by="{{ it.by }}" title="{{ it.name }} · {{ it.size|size }}">
 {% if it.by and colours.get(it.by) %}<span class="byb" style="--c:{{ colours[it.by] }}"></span>{% endif %}
 {% if it.video %}<video src="/e/{{ ev.token }}/file/{{ it.name|q }}#t=0.1" preload="metadata" muted></video>
@@ -87,7 +85,7 @@
 <button>Save</button></form>
 
 <h2>Delete event</h2>
-<form method="post" action="/admin/events/{{ slug }}/delete" class="card row">
+<form method="post" action="/admin/events/{{ slug }}/delete" class="card row" data-noajax>
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <span class="mut">Deletes the folder and every photo in it. Type <code>{{ slug }}</code> to confirm:</span>
 <input type="text" name="confirm" required><button class="bad">Delete forever</button></form>
@@ -104,17 +102,60 @@ function buildCmd(){
 function preset(p){ document.getElementById('src').value = p; buildCmd(); }
 function copyText(id, btn){ navigator.clipboard.writeText(document.getElementById(id).textContent); const t = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = t, 1500); }
 buildCmd();
-const grid = document.getElementById('grid'); let selecting = false;
-function toggleSelect(){ selecting = !selecting; grid.classList.toggle('selecting', selecting);
+const G = () => document.getElementById('grid'); let selecting = false;
+function toggleSelect(){ selecting = !selecting; applySelecting(); if (!selecting) G().querySelectorAll('.sel').forEach(e => e.classList.remove('sel')); upd(); }
+function applySelecting(){ G().classList.toggle('selecting', selecting);
   document.getElementById('selbtn').textContent = selecting ? 'Cancel' : 'Select';
-  document.querySelectorAll('.tilebtn').forEach(f => f.style.display = selecting ? 'none' : '');
-  if (!selecting) grid.querySelectorAll('.sel').forEach(e => e.classList.remove('sel')); upd(); }
-function upd(){ const n = grid.querySelectorAll('.sel').length; const b = document.getElementById('delbtn');
+  document.querySelectorAll('.tilebtn').forEach(f => f.style.display = selecting ? 'none' : ''); }
+function upd(){ const n = G().querySelectorAll('.sel').length; const b = document.getElementById('delbtn');
   b.style.display = n ? '' : 'none'; b.textContent = `Delete ${n} selected`; }
-grid.addEventListener('click', e => { const it = e.target.closest('.it'); if (!it || !selecting) return; e.preventDefault(); it.classList.toggle('sel'); upd(); });
-function bulkDelete(){ const sel = [...grid.querySelectorAll('.sel')]; if (!confirm(`Delete ${sel.length} items forever?`)) return;
-  const f = document.getElementById('delform');
+document.addEventListener('click', e => { const it = e.target.closest('#grid .it'); if (!it || !selecting) return; e.preventDefault(); it.classList.toggle('sel'); upd(); });
+function bulkDelete(){ const sel = [...G().querySelectorAll('.sel')]; if (!sel.length || !confirm(`Delete ${sel.length} items forever?`)) return;
+  const f = document.getElementById('delform'); f.querySelectorAll('input[name=names]').forEach(x => x.remove());
   sel.forEach(it => { const i = document.createElement('input'); i.type = 'hidden'; i.name = 'names'; i.value = it.dataset.name; f.appendChild(i); });
-  f.submit(); }
+  selecting = false; applySelecting(); upd();
+  ajaxForm(f); }
+
+// ---------- no page reloads: forms post via fetch, then the changed parts of the page are swapped in ----------
+async function refreshLive(){
+  const y = scrollY;
+  try {
+    const html = await (await fetch(location.pathname, {cache: 'no-store'})).text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    document.querySelectorAll('[data-live]').forEach(el => { const n = doc.querySelector(`[data-live="${el.dataset.live}"]`); if (n) el.replaceWith(n); });
+    applySelecting(); upd(); window.applyLegend && applyLegend(); scrollTo(0, y);
+  } catch (e) { toast('Couldn\'t refresh, reload the page', true); }
+}
+window.refreshLive = refreshLive;
+function optimistic(f){
+  const act = f.getAttribute('action') || '', names = [...f.querySelectorAll('input[name=names]')].map(i => i.value);
+  if (act.endsWith('/cover')) {
+    document.querySelectorAll('form[action$="/cover"] button').forEach(b => b.textContent = '☆'); f.querySelector('button').textContent = '★';
+  }
+  if (act.endsWith('/delete-photos')) {
+    const tiles = names.map(n => [...document.querySelectorAll('#grid .it')].find(t => t.dataset.name === n)).filter(Boolean);
+    tiles.forEach(t => t.style.display = 'none'); return () => tiles.forEach(t => t.style.display = '');
+  }
+  if (act.includes('/uploaders')) { const row = f.closest('.row'); if (row && act.endsWith('/revoke')) { row.classList.add('busy'); return () => row.classList.remove('busy'); } }
+  return null;
+}
+async function ajaxForm(f){
+  const btn = f.querySelector('button'), undo = optimistic(f);
+  if (btn) btn.classList.add('busy');
+  try {
+    const r = await fetch(f.getAttribute('action'), {method: 'POST', body: new FormData(f), headers: {'x-ajax': '1'}});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || `Error ${r.status}`);
+    toast('✓ ' + (j.msg || 'Done'));
+    if (f.matches('[data-live="uploaders"] form') && f.querySelector('input[name=name]')) f.reset();
+    if (f.getAttribute('action').endsWith('/settings')) f.querySelectorAll('input[type=password], input[name=regen], input[name=clear_password]').forEach(i => { i.value = i.type === 'checkbox' ? i.value : ''; i.checked = false; });
+    await refreshLive();
+  } catch (e) { undo && undo(); toast(e.message || 'Something went wrong', true); }
+  finally { if (btn) btn.classList.remove('busy'); }
+}
+document.addEventListener('submit', e => {
+  const f = e.target; if (e.defaultPrevented || f.hasAttribute('data-noajax') || (f.method || '').toLowerCase() !== 'post') return;
+  e.preventDefault(); ajaxForm(f);
+});
 </script>
 {% endblock %}
