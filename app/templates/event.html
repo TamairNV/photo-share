@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block title %}{{ ev.name }}{% endblock %}
+{% extends "base.html" %}{% from "_icons.html" import i %}{% block title %}{{ ev.name }}{% endblock %}
 {% block head %}<meta name="robots" content="noindex">
 <meta property="og:title" content="{{ ev.name }}"><meta property="og:description" content="{{ items|length }} photos">
 <style>
@@ -9,7 +9,7 @@
 #lb{position:fixed;inset:0;background:rgba(0,0,0,.95);display:none;align-items:center;justify-content:center;z-index:9}
 #lb.on{display:flex}#lb img,#lb video{max-width:96vw;max-height:84vh;object-fit:contain}
 #lb .top{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:12px;gap:8px}
-#lb .nav{position:fixed;top:50%;transform:translateY(-50%);font-size:40px;background:none;padding:10px 18px}
+#lb .nav{position:fixed;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.35);border-radius:50%;padding:10px;width:56px;height:56px}
 #prev{left:4px}#next{right:4px}
 @media (max-width:600px){ #lb .nav{display:none}}
 .day{justify-content:space-between;margin:22px 0 10px}.day h2{font-size:17px}
@@ -17,7 +17,8 @@
 .it img{transition:transform .25s}.it:hover img{transform:scale(1.04)}
 /* ---- phone layout ---- */
 #mbar,#job,#lbbar{display:none}
-.big{flex:1;font-size:17px;font-weight:600;padding:15px 12px;border-radius:14px;text-align:center}
+.big{flex:1;font-size:17px;font-weight:600;padding:14px 10px;min-height:52px;border-radius:14px;text-align:center;white-space:nowrap}
+#mb-select .big{font-size:16px}
 .icon{min-width:54px;font-size:20px;padding:13px 0;border-radius:14px;text-align:center}
 @media (pointer:coarse){
   .tools{display:none}
@@ -28,7 +29,7 @@
   .selday{font-size:15px;padding:6px 0}
   #lb .top{padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:linear-gradient(rgba(0,0,0,.6),transparent)}
   #lb .top .row > :not(.close){display:none}
-  #lb .close{font-size:20px;padding:10px 16px}
+  #lb .close{padding:10px}
   #lb img,#lb video{max-height:calc(100vh - 170px)}
   #lbbar{display:flex;position:fixed;left:0;right:0;bottom:0;gap:10px;padding:10px 12px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(0,0,0,.75) 35%)}
 }
@@ -51,8 +52,8 @@
 <div style="margin-top:12px">{% set upload_url = "/u/" ~ uploader.utoken ~ "/upload" %}{% include "_uploader.html" %}</div></div>{% endif %}
 {% include "_legend.html" %}
 {% if items %}<div class="tools row" style="justify-content:space-between">
-<span class="row"><a class="btn" href="/e/{{ token }}/download.zip" id="allbtn">⬇ Download all</a>
-<button class="sec" type="button" id="selbtn" onclick="toggleSelect()">Select</button>
+<span class="row"><a class="btn" href="/e/{{ token }}/download.zip" id="allbtn">{{ i('download', 18) }} Download all (ZIP)</a>
+<button class="sec" type="button" id="selbtn" onclick="toggleSelect()">{{ i('select', 18) }} <span>Select</span></button>
 <button class="sec" type="button" id="selall" style="display:none" onclick="selAll()">Select all</button>
 <button type="button" id="dlsel" style="display:none" onclick="dlSelected()">Download selected</button>
 </span>
@@ -72,17 +73,17 @@
 
 {% if items %}<div id="mbar">
   <span id="mb-normal" style="display:contents">
-    <button class="sec icon" type="button" onclick="toggleSelect()" title="Select" style="font-size:15px;padding:13px 12px">Select</button>
-    <button class="big save-only" type="button" onclick="saveAll()">📲 Save all to phone</button>
-    <a class="btn sec icon save-only" href="/e/{{ token }}/download.zip" title="Download all as zip">⬇</a>
-    <a class="btn big dl-only" href="/e/{{ token }}/download.zip">⬇ Download all</a>
+    <button class="tb" type="button" onclick="toggleSelect()">{{ i('select', 24) }}Select</button>
+    <button class="big save-only" type="button" onclick="saveAll()">{{ i('photos', 22) }} Save all to Photos</button>
+    <a class="btn big dl-only" href="/e/{{ token }}/download.zip">{{ i('download', 22) }} Download all</a>
+    <a class="btn tb save-only" href="/e/{{ token }}/download.zip">{{ i('download', 24) }}ZIP file</a>
   </span>
   <span id="mb-select" style="display:none">
-    <button class="sec icon" type="button" onclick="toggleSelect()" title="Cancel">✕</button>
-    <button class="sec icon" type="button" onclick="selAll()" title="Select all" style="font-size:14px">All</button>
-    <button class="big save-only" type="button" id="mb-save" onclick="saveSelectedM()" disabled>Tap photos</button>
-    <button class="sec icon save-only" type="button" onclick="if (grid.querySelector('.sel')) dlSelected()" title="Download selected as zip">⬇</button>
-    <button class="big dl-only" type="button" id="mb-dl" onclick="dlSelected()" disabled>Tap photos</button>
+    <button class="tb" type="button" onclick="toggleSelect()">{{ i('x', 24) }}Cancel</button>
+    <button class="tb" type="button" onclick="selAll()">{{ i('all', 24) }}All</button>
+    <button class="big save-only" type="button" id="mb-save" onclick="saveSelectedM()" disabled>Tap to pick</button>
+    <button class="big dl-only" type="button" id="mb-dl" onclick="dlSelected()" disabled>Tap to pick</button>
+    <button class="tb save-only" type="button" id="mb-zip" onclick="if (grid.querySelector('.sel')) dlSelected()">{{ i('download', 24) }}ZIP file</button>
   </span>
 </div>{% endif %}
 
@@ -90,24 +91,24 @@
 <div id="job">
   <div class="row" style="justify-content:space-between;align-items:flex-start">
     <div><h3 id="job-title">Save to phone</h3><div class="mut" id="job-sub"></div></div>
-    <button class="sec icon" type="button" onclick="cancelJob()" style="min-width:44px;padding:8px 0">✕</button></div>
+    <button class="sec iconbtn" type="button" onclick="cancelJob()" aria-label="Close">{{ i('x', 20) }}</button></div>
   <div class="bar"><div id="job-prog"></div></div>
-  <button class="big" type="button" id="job-btn" onclick="jobTap()" style="width:100%">…</button>
-  <p class="mut" style="font-size:13px;margin:10px 0 0;text-align:center" id="job-hint">Your phone saves up to 20 at a time. Tap the button for each batch.</p>
+  <button class="big" type="button" id="job-btn" onclick="jobTap()" style="width:100%">Preparing</button>
+  <p class="mut" style="font-size:13px;margin:10px 0 0;text-align:center" id="job-hint">Your phone saves up to 20 at a time, so tap once for each group of 20.</p>
 </div>
 
 
 
 <div id="lb"><div class="top"><span id="cap" class="mut"></span>
-<span class="row"><a id="dl" class="btn">⬇ Download</a><button class="sec close" onclick="closeLb()">✕</button></span></div>
-<div id="lbbar"><button class="sec icon" type="button" onclick="step(-1)">‹</button>
-<button class="big save-only" type="button" onclick="saveCurrent()">📲 Save to phone</button>
-<a class="btn sec icon save-only" id="dl3" title="Download">⬇</a>
-<a class="btn big dl-only" id="dl2">⬇ Download</a>
-<button class="sec icon" type="button" onclick="step(1)">›</button></div>
-<button class="nav" id="prev" onclick="step(-1)">‹</button><div id="media"></div><button class="nav" id="next" onclick="step(1)">›</button></div>
+<span class="row"><a id="dl" class="btn">{{ i('download', 18) }} Download original</a><button class="sec iconbtn close" onclick="closeLb()" aria-label="Close">{{ i('x', 22) }}</button></span></div>
+<div id="lbbar">
+<button class="big save-only" type="button" onclick="saveCurrent()">{{ i('photos', 22) }} Save to Photos</button>
+<a class="btn big dl-only" id="dl2">{{ i('download', 22) }} Download original</a>
+<a class="btn tb save-only" id="dl3">{{ i('download', 24) }}Original</a></div>
+<button class="nav" id="prev" onclick="step(-1)" aria-label="Previous">{{ i('left', 34) }}</button><div id="media"></div><button class="nav" id="next" onclick="step(1)" aria-label="Next">{{ i('right', 34) }}</button></div>
 <script>
 if (sessionStorage.keepY) { const y = +sessionStorage.keepY; delete sessionStorage.keepY; addEventListener('load', () => scrollTo(0, y)); }
+const IC = {photos: {{ i('photos', 22)|string|tojson }}, download: {{ i('download', 18)|string|tojson }}, check: {{ i('check', 22)|string|tojson }}};
 const items = {{ items|tojson }}, tok = {{ token|tojson }}, enc = n => encodeURIComponent(n);
 const who = Object.fromEntries(({{ (legend or [])|tojson }}).map(l => [l.id, l.name]));
 let cur = 0, selecting = false; const lb = document.getElementById('lb'), m = document.getElementById('media'), grid = document.getElementById('grid');
@@ -135,17 +136,17 @@ grid.addEventListener('click', e => {
   const it = e.target.closest('.it'); if (!it) return;
   if (selecting) { it.classList.toggle('sel'); upd(); } else openLb(+it.dataset.i); });
 function toggleSelect(){ selecting = !selecting; grid.classList.toggle('selecting', selecting);
-  document.getElementById('selbtn').textContent = selecting ? 'Cancel' : 'Select';
+  document.querySelector('#selbtn span').textContent = selecting ? 'Cancel' : 'Select';
   const mn = document.getElementById('mb-normal'), ms = document.getElementById('mb-select');
   if (mn) { mn.style.display = selecting ? 'none' : 'contents'; ms.style.display = selecting ? 'contents' : 'none'; }
   if (!selecting) grid.querySelectorAll('.sel').forEach(e => e.classList.remove('sel')); upd(); }
 function selAll(){ const t = [...grid.querySelectorAll('.it:not(.hid)')], all = t.every(x => x.classList.contains('sel')); t.forEach(x => x.classList.toggle('sel', !all)); upd(); }
 function upd(){ const n = grid.querySelectorAll('.sel').length, b = document.getElementById('dlsel');
   const ms = document.getElementById('mb-save'), md = document.getElementById('mb-dl');
-  if (ms) { ms.disabled = !n; ms.textContent = n ? `📲 Save ${n}` : 'Tap photos'; }
-  if (md) { md.disabled = !n; md.textContent = n ? `⬇ Download ${n}` : 'Tap photos'; }
+  if (ms) { ms.disabled = !n; ms.innerHTML = n ? `${IC.photos} Save ${n} to Photos` : 'Tap photos to pick'; }
+  if (md) { md.disabled = !n; md.innerHTML = n ? `${IC.download} Download ${n}` : 'Tap photos to pick'; }
   document.getElementById('selall').style.display = selecting ? '' : 'none';
-  b.style.display = n ? '' : 'none'; b.textContent = `⬇ Download ${n} selected`;
+  b.style.display = n ? '' : 'none'; b.innerHTML = `${IC.download} Download ${n} selected (ZIP)`;
   document.getElementById('selinfo').textContent = selecting ? (n ? '' : 'Tap photos to pick them') : ''; }
 function dlSelected(){ const f = document.getElementById('selform'); f.innerHTML = '';
   grid.querySelectorAll('.sel').forEach(it => { const i = document.createElement('input'); i.type = 'hidden'; i.name = 'names'; i.value = items[+it.dataset.i].name; f.appendChild(i); });
@@ -171,16 +172,16 @@ async function fetchFile(name){
 function drawJob(){
   if (!job) return;
   const total = job.names.length, left = total - job.saved, b = $('job-btn');
-  $('job-title').textContent = job.saved >= total ? 'All saved ✓' : total === 1 ? 'Save to phone' : `Saving ${total} to your phone`;
+  $('job-title').textContent = job.saved >= total ? (total === 1 ? 'Saved to Photos' : `All ${total} saved to Photos`) : total === 1 ? 'Save to Photos' : `Save ${total} to Photos`;
   $('job-prog').style.width = (100 * job.saved / total) + '%';
-  $('job-sub').textContent = total === 1 ? '' : `${job.saved} of ${total} saved`;
+  $('job-sub').textContent = total === 1 ? '' : `${job.saved} of ${total} saved` + (total - job.saved > 0 && job.saved > 0 ? ` · ${total - job.saved} to go` : '');
   $('job-hint').style.display = total > BATCH_FILES && job.saved < total ? '' : 'none';
-  if (job.saved >= total) { b.disabled = false; b.textContent = 'Done'; return; }
+  if (job.saved >= total) { b.disabled = false; b.innerHTML = `${IC.check} Done`; return; }
   if (job.error) { b.disabled = false; b.textContent = 'Try again'; return; }
-  if (job.loading) { b.disabled = true; b.textContent = `Getting ${job.loading.done + 1} of ${job.loading.n}…`; return; }
+  if (job.loading) { b.disabled = true; b.textContent = job.loading.n === 1 ? 'Preparing…' : `Preparing ${job.loading.done + 1} of ${job.loading.n}…`; return; }
   const n = job.ready ? job.ready.length : 0;
   b.disabled = false;
-  b.textContent = total === 1 ? '📲 Save to phone' : job.saved === 0 ? `📲 Save ${n === left ? 'all ' : ''}${n}` : `📲 Save next ${n}` + (left > n ? ` (${left} left)` : '');
+  b.innerHTML = IC.photos + ' ' + (total === 1 ? 'Save to Photos' : job.saved === 0 ? (n === left ? `Save ${n} to Photos` : `Save first ${n}`) : `Save next ${n}`);
 }
 async function loadBatch(){
   const gen = job.gen, out = []; let bytes = 0;

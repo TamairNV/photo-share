@@ -1,19 +1,19 @@
-{% extends "base.html" %}{% block title %}Events · Admin{% endblock %}{% block head %}<style>
+{% extends "base.html" %}{% from "_icons.html" import i %}{% block title %}Events · Admin{% endblock %}{% block head %}<style>
 .ev{display:block;color:var(--fg);background:var(--card);border-radius:12px;overflow:hidden}
 .ev .cv{aspect-ratio:16/10;background:#222 center/cover}.ev .in{padding:12px}
 .evs{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
 .tag{font-size:12px;background:#2a2a2e;border-radius:6px;padding:1px 7px;margin-right:4px}
 </style>{% endblock %}{% block body %}
 <header><h1>Events</h1>
-<form method="post" action="/admin/logout"><button class="sec">Log out</button></form></header>
+<form method="post" action="/admin/logout"><button class="sec">{{ i('logout', 18) }} Log out</button></form></header>
 <form method="post" action="/admin/events" class="card row" style="margin-bottom:20px">
 <input type="hidden" name="csrf" value="{{ csrf }}">
-<input type="text" name="name" placeholder="New event name, e.g. Sam's 30th" required style="flex:1;min-width:220px"><button>Create event</button></form>
+<input type="text" name="name" placeholder="New event name, e.g. Sam's 30th" required style="flex:1;min-width:220px"><button>{{ i('plus', 18) }} Create event</button></form>
 {% if events %}<div class="evs">{% for e in events %}
 <a class="ev" href="/admin/events/{{ e.slug }}">
 <div class="cv" {% if e.cover_name %}style="background-image:url('/admin/events/{{ e.slug }}/thumb/{{ e.cover_name|q }}')"{% endif %}></div>
 <div class="in"><b>{{ e.name }}</b><div class="mut" style="font-size:13px">{% if e.date %}{{ e.date|nicedate }} · {% endif %}{{ e.count }} items · {{ e.bytes|size }}</div>
-<div class="mut" style="font-size:13px;margin-top:4px">👁 {{ e.views }} · ⬇ {{ e.downloads }}
-{% if e.password %}<span class="tag">🔒</span>{% endif %}{% if not e.public %}<span class="tag">link off</span>{% endif %}{% if e.expired %}<span class="tag">expired</span>{% endif %}{% set nup = e.uploaders.values()|rejectattr("revoked")|list|length %}{% if nup %}<span class="tag">{{ nup }} uploader link{{ "s" if nup > 1 }}</span>{% endif %}</div></div></a>
+<div class="mut row" style="font-size:13px;margin-top:4px;gap:10px"><span title="Views">{{ i('eye', 14) }} {{ e.views }}</span><span title="Downloads">{{ i('download', 14) }} {{ e.downloads }}</span>
+{% if e.password %}<span class="tag">{{ i('lock', 12) }} Password</span>{% endif %}{% if not e.public %}<span class="tag">link off</span>{% endif %}{% if e.expired %}<span class="tag">expired</span>{% endif %}{% set nup = e.uploaders.values()|rejectattr("revoked")|list|length %}{% if nup %}<span class="tag">{{ nup }} uploader link{{ "s" if nup > 1 }}</span>{% endif %}</div></div></a>
 {% endfor %}</div>{% else %}<p class="mut">No events yet.</p>{% endif %}
 {% endblock %}

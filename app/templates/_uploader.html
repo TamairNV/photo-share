@@ -69,7 +69,7 @@ async function send(fl){
   const secs = (performance.now() - t0) / 1000;
   $('status').innerHTML = `<span class="ok">✓ ${ok} uploaded</span>` + (bad ? ` · <span style="color:var(--bad)">${bad} failed</span>` : '');
   $('speed').textContent = `${mb(total)} MB in ${dur(secs)} (${(total / 1048576 / secs).toFixed(1)} MB/s)`;
-  if (window.toast) toast(`✓ ${ok} uploaded` + (bad ? `, ${bad} failed` : ''), !!bad);
+  if (window.toast) toast(`${ok} uploaded` + (bad ? `, ${bad} failed` : ''), !!bad);
   setTimeout(() => { if (window.refreshLive) refreshLive(); else { sessionStorage.keepY = scrollY; location.reload(); } }, 900);
 }
 // Phones can take a while to hand files over after you pick them (iCloud downloads, video export),

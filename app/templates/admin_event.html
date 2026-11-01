@@ -1,7 +1,7 @@
-{% extends "base.html" %}{% block title %}{{ ev.name }} · Admin{% endblock %}{% block body %}
-<header><div data-live="head"><a href="/admin">← Events</a><h1>{{ ev.name }}</h1>
-<span class="mut">{{ items|length }} items · {{ total|size }} · 👁 {{ ev.views }} views · ⬇ {{ ev.downloads }} downloads</span></div>
-<a class="btn sec" href="/e/{{ ev.token }}" target="_blank">View as guest</a></header>
+{% extends "base.html" %}{% from "_icons.html" import i %}{% block title %}{{ ev.name }} · Admin{% endblock %}{% block body %}
+<header><div data-live="head"><a href="/admin" class="row" style="gap:4px;display:inline-flex">{{ i('back', 16) }} All events</a><h1>{{ ev.name }}</h1>
+<span class="mut row" style="gap:14px">{{ items|length }} items · {{ total|size }}<span>{{ i('eye', 15) }} {{ ev.views }} views</span><span>{{ i('download', 15) }} {{ ev.downloads }} downloads</span></span></div>
+<a class="btn sec" href="/e/{{ ev.token }}" target="_blank">{{ i('external', 18) }} View as guest</a></header>
 
 <div data-live="notice">{% if missing_thumbs %}<p class="mut">{{ missing_thumbs }} thumbnails not built yet. They build on first view, or hit Rescan below.</p>{% endif %}</div>
 
@@ -9,11 +9,11 @@
 <img src="/admin/events/{{ slug }}/qr.svg?v={{ ev.token }}" alt="QR code" style="width:120px;height:120px;border-radius:8px;background:#fff">
 <div style="flex:1;min-width:240px">
 <div class="row" style="margin-bottom:8px"><b>Share link:</b> <code id="url">{{ url }}</code>
-<button class="sec" onclick="copyText('url', this)">Copy</button>
-<a class="btn sec" href="/admin/events/{{ slug }}/qr.svg" download="{{ slug }}-qr.svg">Download QR</a></div>
+<button class="sec" onclick="copyText('url', this)">{{ i('copy', 16) }} <span>Copy link</span></button>
+<a class="btn sec" href="/admin/events/{{ slug }}/qr.svg" download="{{ slug }}-qr.svg">{{ i('qr', 16) }} Download QR code</a></div>
 {% if not ev.public %}<p style="color:var(--bad);margin:4px 0">Link is turned off. Guests can't see this event.</p>{% endif %}
 {% if expired %}<p style="color:var(--bad);margin:4px 0">Link expired on {{ ev.expires|nicedate }}.</p>{% elif ev.expires %}<p class="mut" style="margin:4px 0">Link works until {{ ev.expires|nicedate }}.</p>{% endif %}
-{% if ev.password %}<p class="mut" style="margin:4px 0">🔒 Guests need the password.</p>{% endif %}
+{% if ev.password %}<p class="mut" style="margin:4px 0">{{ i('lock', 15) }} Guests need the password.</p>{% endif %}
 <p class="mut" style="margin:4px 0">Folder on server: <code>{{ folder }}</code></p>
 </div></div>
 
@@ -24,12 +24,12 @@
 <span class="dot" style="background:{{ u.colour }};width:14px;height:14px"></span><b style="min-width:90px">{{ u.name }}</b>
 <span class="mut">{{ u.count }} uploaded</span>
 <code id="up-{{ u.id }}" style="flex:1">{{ u.url }}</code>
-<button class="sec" type="button" onclick="copyText('up-{{ u.id }}', this)">Copy</button>
+<button class="sec" type="button" onclick="copyText('up-{{ u.id }}', this)">{{ i('copy', 16) }} <span>Copy</span></button>
 <form method="post" action="/admin/events/{{ slug }}/uploaders/{{ u.id }}/revoke" onsubmit="return confirm('Turn off {{ u.name }}\'s upload link? Their photos stay.')">
-<input type="hidden" name="csrf" value="{{ csrf }}"><button class="bad">Turn off</button></form></div>{% endfor %}
+<input type="hidden" name="csrf" value="{{ csrf }}"><button class="sec">Turn off</button></form></div>{% endfor %}
 <form method="post" action="/admin/events/{{ slug }}/uploaders" class="row">
 <input type="hidden" name="csrf" value="{{ csrf }}">
-<input type="text" name="name" placeholder="Who's it for? e.g. Jess" required maxlength="40" style="flex:1"><button>Create upload link</button></form>
+<input type="text" name="name" placeholder="Who's it for? e.g. Jess" required maxlength="40" style="flex:1"><button>{{ i('link', 18) }} Create upload link</button></form>
 </div>
 
 <h2>Upload</h2>
@@ -45,14 +45,14 @@
 <button class="sec" type="button" onclick="preset('~/Pictures/FOLDER/')">Folder on Mac</button></div>
 <div class="row" style="margin-bottom:8px"><span class="mut" style="width:90px">Card name</span><input type="text" id="card" value="NO NAME" style="flex:1" oninput="buildCmd()"></div>
 <div class="row" style="margin-bottom:8px"><span class="mut" style="width:90px">Copy from</span><input type="text" id="src" value="/Volumes/CARD/DCIM/" style="flex:1" oninput="buildCmd()"></div>
-<div class="row"><code id="cmd" style="flex:1;padding:10px;font-size:13px"></code><button type="button" onclick="copyText('cmd', this)">Copy command</button></div>
+<div class="row"><code id="cmd" style="flex:1;padding:10px;font-size:13px"></code><button type="button" onclick="copyText('cmd', this)">{{ i('copy', 16) }} <span>Copy command</span></button></div>
 <p class="mut" style="font-size:13px;margin-bottom:0">Tip: drag a folder from Finder into the "Copy from" box to paste its path. When it finishes, hit Rescan to build thumbnails.</p>
-<form method="post" action="/admin/events/{{ slug }}/rescan" style="margin-top:10px"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="sec">↻ Rescan folder</button></form>
+<form method="post" action="/admin/events/{{ slug }}/rescan" style="margin-top:10px"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="sec">{{ i('refresh', 16) }} Rescan folder</button></form>
 </div>
 
 <h2 class="row" style="justify-content:space-between"><span data-live="count">Photos ({{ items|length }})</span>
 <span class="row" style="font-size:15px;font-weight:normal">
-<button class="sec" type="button" id="selbtn" onclick="toggleSelect()">Select</button>
+<button class="sec" type="button" id="selbtn" onclick="toggleSelect()">{{ i('select', 18) }} <span>Select</span></button>
 <button class="bad" type="button" id="delbtn" style="display:none" onclick="bulkDelete()">Delete selected</button></span></h2>
 <div data-live="legend">{% include "_legend.html" %}</div>
 <div class="grid" id="grid" data-live="grid">{% for it in items %}
@@ -63,10 +63,10 @@
 <span class="chk"></span>
 {% if not it.video %}<form method="post" action="/admin/events/{{ slug }}/cover" style="position:absolute;bottom:6px;right:6px" class="tilebtn">
 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="name" value="{{ it.name }}">
-<button class="sec" style="padding:3px 9px" title="Use as cover">{% if ev.cover == it.name %}★{% else %}☆{% endif %}</button></form>{% endif %}
+<button class="sec iconbtn star {% if ev.cover == it.name %}on{% endif %}" title="Use as cover photo" aria-label="Use as cover photo">{{ i('star', 18) }}</button></form>{% endif %}
 <form method="post" action="/admin/events/{{ slug }}/delete-photos" onsubmit="return confirm('Delete this photo forever?')" style="position:absolute;top:6px;right:6px" class="tilebtn">
 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="names" value="{{ it.name }}">
-<button class="bad" style="padding:3px 9px" title="Delete">✕</button></form>
+<button class="sec iconbtn del" title="Delete" aria-label="Delete">{{ i('trash', 18) }}</button></form>
 </div>{% endfor %}</div>
 <form method="post" action="/admin/events/{{ slug }}/delete-photos" id="delform"><input type="hidden" name="csrf" value="{{ csrf }}"></form>
 
@@ -91,6 +91,7 @@
 <input type="text" name="confirm" required><button class="bad">Delete forever</button></form>
 
 <script>
+const TRASH = {{ i('trash', 16)|string|tojson }};
 const SSH = {{ (ssh_target or "user@server")|tojson }}, DEST = {{ (folder ~ "/")|tojson }};
 function shq(s){ return s.startsWith('~/') ? '~/"' + s.slice(2).replace(/(["\\$`])/g, '\\$1') + '"' : '"' + s.replace(/(["\\$`])/g, '\\$1') + '"'; }
 function buildCmd(){
@@ -100,15 +101,15 @@ function buildCmd(){
   document.getElementById('cmd').textContent = `rsync -av --progress --exclude='.*' ${shq(src)} ${SSH}:${shq(DEST)}`;
 }
 function preset(p){ document.getElementById('src').value = p; buildCmd(); }
-function copyText(id, btn){ navigator.clipboard.writeText(document.getElementById(id).textContent); const t = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = t, 1500); }
+function copyText(id, btn){ navigator.clipboard.writeText(document.getElementById(id).textContent); const sp = btn.querySelector('span') || btn, t = sp.textContent; sp.textContent = 'Copied'; toast('Copied to clipboard'); setTimeout(() => sp.textContent = t, 1500); }
 buildCmd();
 const G = () => document.getElementById('grid'); let selecting = false;
 function toggleSelect(){ selecting = !selecting; applySelecting(); if (!selecting) G().querySelectorAll('.sel').forEach(e => e.classList.remove('sel')); upd(); }
 function applySelecting(){ G().classList.toggle('selecting', selecting);
-  document.getElementById('selbtn').textContent = selecting ? 'Cancel' : 'Select';
+  document.querySelector('#selbtn span').textContent = selecting ? 'Cancel' : 'Select';
   document.querySelectorAll('.tilebtn').forEach(f => f.style.display = selecting ? 'none' : ''); }
 function upd(){ const n = G().querySelectorAll('.sel').length; const b = document.getElementById('delbtn');
-  b.style.display = n ? '' : 'none'; b.textContent = `Delete ${n} selected`; }
+  b.style.display = n ? '' : 'none'; b.innerHTML = `${TRASH} Delete ${n} selected`; }
 document.addEventListener('click', e => { const it = e.target.closest('#grid .it'); if (!it || !selecting) return; e.preventDefault(); it.classList.toggle('sel'); upd(); });
 function bulkDelete(){ const sel = [...G().querySelectorAll('.sel')]; if (!sel.length || !confirm(`Delete ${sel.length} items forever?`)) return;
   const f = document.getElementById('delform'); f.querySelectorAll('input[name=names]').forEach(x => x.remove());
@@ -130,7 +131,7 @@ window.refreshLive = refreshLive;
 function optimistic(f){
   const act = f.getAttribute('action') || '', names = [...f.querySelectorAll('input[name=names]')].map(i => i.value);
   if (act.endsWith('/cover')) {
-    document.querySelectorAll('form[action$="/cover"] button').forEach(b => b.textContent = '☆'); f.querySelector('button').textContent = '★';
+    document.querySelectorAll('form[action$="/cover"] button').forEach(b => b.classList.remove('on')); f.querySelector('button').classList.add('on');
   }
   if (act.endsWith('/delete-photos')) {
     const tiles = names.map(n => [...document.querySelectorAll('#grid .it')].find(t => t.dataset.name === n)).filter(Boolean);
@@ -146,7 +147,7 @@ async function ajaxForm(f){
     const r = await fetch(f.getAttribute('action'), {method: 'POST', body: new FormData(f), headers: {'x-ajax': '1'}});
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.detail || `Error ${r.status}`);
-    toast('✓ ' + (j.msg || 'Done'));
+    toast(j.msg || 'Done');
     if (f.matches('[data-live="uploaders"] form') && f.querySelector('input[name=name]')) f.reset();
     if (f.getAttribute('action').endsWith('/settings')) f.querySelectorAll('input[type=password], input[name=regen], input[name=clear_password]').forEach(i => { i.value = i.type === 'checkbox' ? i.value : ''; i.checked = false; });
     await refreshLive();
@@ -158,4 +159,10 @@ document.addEventListener('submit', e => {
   e.preventDefault(); ajaxForm(f);
 });
 </script>
+<style>
+.it .tilebtn .iconbtn{background:rgba(20,20,22,.75)!important;color:#fff;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.it .tilebtn{opacity:0;transition:opacity .15s}.it:hover .tilebtn,.it .tilebtn:has(.star.on){opacity:1}
+@media (pointer:coarse){.it .tilebtn{opacity:1}}
+.it .star.on{color:#fcc419}.it .star.on svg{fill:currentColor}.it .del:hover{color:var(--bad)}
+</style>
 {% endblock %}
