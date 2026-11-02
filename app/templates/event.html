@@ -55,6 +55,7 @@
 <b>Hi {{ uploader.name }}!</b> <span class="mut">This is your upload link. Anything you add here shows up in the album with your colour. Please don't share this link.</span>
 <div style="margin-top:12px">{% set upload_url = "/u/" ~ uploader.utoken ~ "/upload" %}{% include "_uploader.html" %}</div></div>{% endif %}
 {% include "_legend.html" %}
+{% include "_tags.html" %}
 {% if items %}<div class="tools row" style="justify-content:space-between">
 <span class="row"><a class="btn" href="/e/{{ token }}/download.zip" id="allbtn">{{ i('download', 18) }} Download all (ZIP)</a>
 <button class="sec" type="button" id="selbtn" onclick="toggleSelect()">{{ i('select', 18) }} <span>Select</span></button>
@@ -68,7 +69,7 @@
 {% if loop.first or items[loop.index0-1].day != it.day %}{% if not loop.first %}</div>{% endif %}
 {% if multi_day %}<div class="day row"><h2 style="margin:0">{{ it.dayLabel }}</h2><a href="#" class="selday mut" data-day="{{ it.day }}">Select day</a></div>{% endif %}
 <div class="grid">{% endif %}
-<div class="it {% if it.video %}vid{% endif %}" data-i="{{ loop.index0 }}" data-day="{{ it.day }}" data-by="{{ it.by }}">
+<div class="it {% if it.video %}vid{% endif %}" data-i="{{ loop.index0 }}" data-day="{{ it.day }}" data-by="{{ it.by }}" data-tags="{{ it.tags|join('|') }}">
 {% if it.by and ev.uploaders.get(it.by) %}<span class="byb" style="--c:{{ ev.uploaders[it.by].colour }}" title="{{ ev.uploaders[it.by].name }}"></span>{% endif %}
 {% if it.video %}<video src="/e/{{ token }}/file/{{ it.name|q }}?v={{ it.v }}#t=0.1" preload="metadata" muted playsinline></video>
 {% else %}<img loading="lazy" decoding="async" src="/e/{{ token }}/thumb/{{ it.name|q }}?v={{ it.v }}" alt="">{% endif %}<span class="chk"></span><span class="tm">{{ it.time }}</span>

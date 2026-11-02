@@ -1,17 +1,18 @@
-{% if legend and (legend|length > 1 or legend[0].id) %}
+{% if legend and (legend|length > 1 or legend[0].id) %}{% include "_filter.html" %}
 <div class="legend row" id="legend">
 <button type="button" class="chip on" data-by="*">All</button>
 {% for l in legend %}<button type="button" class="chip" data-by="{{ l.id }}"><span class="dot" style="background:{{ l.colour }}"></span>{{ l.name }} <span class="mut">{{ l.count }}</span></button>{% endfor %}
 </div>
 <script>
 if (!window.__legendBound) { window.__legendBound = true;
-  window.applyLegend = () => { const on = document.querySelector('#legend .chip.on'); if (on && on.dataset.by !== '*') on.click(); };
+  // the admin page swaps the legend in after changes; put the old choice back on the new chips
+  window.applyLegend = () => { const by = window.galleryFilter.by;
+    document.querySelectorAll('#legend .chip').forEach(x => x.classList.toggle('on', x.dataset.by === by));
+    if (!document.querySelector('#legend .chip.on')) { window.galleryFilter.by = '*'; const a = document.querySelector('#legend .chip[data-by="*"]'); if (a) a.classList.add('on'); }
+    window.applyGalleryFilter(); };
   document.addEventListener('click', e => { const c = e.target.closest('#legend .chip'); if (!c) return;
     document.querySelectorAll('#legend .chip').forEach(x => x.classList.toggle('on', x === c));
-    const by = c.dataset.by;
-    document.querySelectorAll('.it[data-by]').forEach(t => t.classList.toggle('hid', by !== '*' && t.dataset.by !== by));
-    document.querySelectorAll('.grid').forEach(g => { const empty = !g.querySelector('.it:not(.hid)');
-      g.style.display = empty ? 'none' : ''; const d = g.previousElementSibling; if (d && d.classList.contains('day')) d.style.display = empty ? 'none' : ''; });
+    window.galleryFilter.by = c.dataset.by; window.applyGalleryFilter();
   });
 }
 </script>{% endif %}
