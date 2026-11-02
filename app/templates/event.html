@@ -115,10 +115,18 @@ if (sessionStorage.keepY) { const y = +sessionStorage.keepY; delete sessionStora
 const IC = {photos: {{ i('photos', 22)|string|tojson }}, download: {{ i('download', 18)|string|tojson }}, check: {{ i('check', 22)|string|tojson }}};
 const items = {{ items|tojson }}, tok = {{ token|tojson }}, enc = n => encodeURIComponent(n);
 const who = Object.fromEntries(({{ (legend or [])|tojson }}).map(l => [l.id, l.name]));
+// tell the server what got looked at / saved (Cloudflare's cache hides most of it from the server)
+const seenQ = {v: new Set(), p: new Set(), s: []};
+function sendStats(){ if (!seenQ.v.size && !seenQ.p.size && !seenQ.s.length) return;
+  const body = JSON.stringify({v: [...seenQ.v], p: [...seenQ.p], s: seenQ.s}); seenQ.v.clear(); seenQ.p.clear(); seenQ.s = [];
+  try { navigator.sendBeacon(`/e/${tok}/beacon`, new Blob([body], {type: 'application/json'})); } catch (e) {} }
+setInterval(sendStats, 8000); addEventListener('pagehide', sendStats);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') sendStats(); });
 let cur = 0, selecting = false; const lb = document.getElementById('lb'), m = document.getElementById('media'), grid = document.getElementById('grid');
 function show(){
   const it = items[cur], n = enc(it.name);
   m.innerHTML = it.video ? `<video src="/e/${tok}/file/${n}?v=${it.v}" controls autoplay playsinline></video>` : `<img src="/e/${tok}/preview/${n}?v=${it.v}">`;
+  if (it.video) m.querySelector('video').addEventListener('play', () => seenQ.p.add(it.name), {once: true}); else seenQ.v.add(it.name);
   document.getElementById('dl').href = `/e/${tok}/file/${n}?dl=1`;
   for (const id of ['dl2', 'dl3']) { const a = document.getElementById(id); if (a) a.href = `/e/${tok}/file/${n}?dl=1`; }
   document.getElementById('cap').textContent = `${it.when}` + (it.by && who[it.by] ? `  ·  by ${who[it.by]}` : '') + `  ·  ${cur+1} / ${items.length}`;
@@ -225,7 +233,7 @@ async function shareCurrent(){
   catch (e) { if (job) job.sharing = false; if (e.name !== 'AbortError' && e.name !== 'NotAllowedError') toastMsg("Couldn't open the save menu, try again."); drawJob(); return false; }
   if (!job || job.gen !== gen) return true;
   job.sharing = false;
-  job.saved += files.length; cur.files = null; job.k++;   // drop saved files from memory
+  job.saved += files.length; seenQ.s.push(...cur.items.map(x => x.name)); sendStats(); cur.files = null; job.k++;   // drop saved files from memory
   prefetch(job.k); drawJob();
   if (job.saved >= job.total) setTimeout(() => { if (job && job.saved >= job.total) cancelJob(); }, 1600);
   return true;
