@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from PIL import Image, ImageOps
 
-from . import stats
+from . import stats, tagger
 
 try:
     from pillow_heif import register_heif_opener
@@ -397,6 +397,7 @@ def finish_upload(slug, tmp, name, uploader_id):
     if uploader_id:
         set_source(slug, dest.name, uploader_id)
     _pool.submit(pregenerate, slug, dest.name)  # thumbnails are built in the background
+    tagger.kick()  # Claude tags it (with whatever else lands in the next minute)
     return {"status": "done", "saved": dest.name}
 
 
@@ -443,6 +444,9 @@ app.add_middleware(SessionMiddleware, secret_key=SECRET, max_age=60 * 60 * 24 * 
                    https_only=BASE_URL.startswith("https"), same_site="lax")
 stats.init(DATA / ".stats.db", SECRET)
 app.add_middleware(stats.StatsMiddleware)  # outermost, so it sees every byte that goes out
+tagger.init(DATA, lambda: list(sync_folders()["events"]),
+            lambda slug: {i["name"]: i["mtime"] for i in media_files(slug) if not i["video"]},
+            lambda slug, name: resized(slug, name, "thumb"))
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 templates.env.globals["site_name"] = SITE_NAME
 templates.env.filters["q"] = lambda s: quote(s, safe="")
@@ -554,14 +558,26 @@ def has_uploader_access(request, ev):
 
 def gallery_items(slug, ev):
     items = []
+    tags = tagger.tags_for(slug)
     for i in media_files(slug, ev["sort"]):
         t = datetime.fromtimestamp(i["taken"])
         items.append({"name": i["name"], "video": i["video"], "by": i["by"], "day": t.strftime("%Y-%m-%d"),
+                      "tags": ["video"] if i["video"] else tags.get(i["name"], []),
                       "dayLabel": t.strftime("%A %-d %B %Y"), "time": t.strftime("%H:%M"),
                       "when": t.strftime("%-d %b %Y, %H:%M"), "v": int(i["mtime"]), "size": i["size"]})
     cover = next((i for i in items if i["name"] == ev["cover"] and not i["video"]), None) or \
         next((i for i in items if not i["video"]), None)
     return items, cover
+
+
+def tag_counts(items):
+    """[(tag, count)], most used first. Tags on a single photo aren't worth a filter chip in a big album."""
+    counts = {}
+    for i in items:
+        for t in i["tags"]:
+            counts[t] = counts.get(t, 0) + 1
+    min_n = 2 if len(items) > 30 else 1
+    return sorted(((t, n) for t, n in counts.items() if n >= min_n and n < len(items)), key=lambda x: (-x[1], x[0]))
 
 
 class BigFileResponse(FileResponse):
@@ -618,7 +634,8 @@ def event_page(request: Request, token: str):
         bump(slug, "views")
     items, cover = gallery_items(slug, ev)
     return templates.TemplateResponse(request, "event.html", ctx(
-        request, ev=ev, token=token, items=items, cover=cover, legend=uploader_legend(ev, items), uploader=None))
+        request, ev=ev, token=token, items=items, cover=cover, legend=uploader_legend(ev, items), uploader=None,
+        tags=tag_counts(items)))
 
 
 @app.post("/e/{token}/unlock", response_class=HTMLResponse)
@@ -721,7 +738,7 @@ def uploader_page(request: Request, utoken: str):
     items, cover = gallery_items(slug, ev)
     return templates.TemplateResponse(request, "event.html", ctx(
         request, ev=ev, token=ev["token"], items=items, cover=cover, legend=uploader_legend(ev, items),
-        uploader={**u, "id": uid, "utoken": utoken}, chunk_size=CHUNK_SIZE))
+        uploader={**u, "id": uid, "utoken": utoken}, chunk_size=CHUNK_SIZE, tags=tag_counts(items)))
 
 
 @app.post("/u/{utoken}/upload")
@@ -822,7 +839,22 @@ def admin_event(request: Request, slug: str):
         total=sum(i["size"] for i in items), expired=expired(ev),
         folder=f"{HOST_PHOTOS_PATH.rstrip('/')}/events/{slug}", ssh_target=SSH_TARGET,
         chunk_size=CHUNK_SIZE, missing_thumbs=sum(1 for i in items if not i["video"] and not cache_path(slug, "thumb", i["name"]).exists()),
-        rescanned=request.query_params.get("rescanned"), saved=request.query_params.get("saved")))
+        rescanned=request.query_params.get("rescanned"), saved=request.query_params.get("saved"),
+        tagging=tag_status(slug)))
+
+
+def tag_status(slug):
+    tagged, total = tagger.progress(slug) if tagger.ENABLED else (0, 0)
+    return {**tagger.status, "enabled": tagger.ENABLED, "tagged": tagged, "total": total, "model": tagger.MODEL}
+
+
+@app.post("/admin/events/{slug}/tag-now")
+def tag_now(request: Request, slug: str, csrf: str = Form("")):
+    """Start tagging straight away, even if it's waiting out a usage limit (it'll just wait again if still limited)."""
+    require_admin(request); check_csrf(request, csrf)
+    get_event(slug)
+    tagger.kick(now=True)
+    return done(request, f"/admin/events/{slug}#tags", "Tagging started" if tagger.ENABLED else "Auto tagging is off (AUTO_TAG=0)")
 
 
 @app.post("/admin/events/{slug}/upload")
@@ -842,6 +874,7 @@ def rescan(request: Request, slug: str, csrf: str = Form("")):
     for n in todo:
         _pool.submit(pregenerate, slug, n)
     clean_stale_uploads()
+    tagger.kick()
     return done(request, f"/admin/events/{slug}?rescanned={len(todo)}", f"Rescanned. Building {len(todo)} new thumbnails" if todo else "Rescanned. Everything is up to date")
 
 
@@ -930,6 +963,7 @@ def delete_event(request: Request, slug: str, confirm: str = Form(""), csrf: str
         shutil.rmtree(EVENTS_DIR / slug, ignore_errors=True)
         shutil.rmtree(CACHE_DIR / slug, ignore_errors=True)
         (SOURCES_DIR / f"{slug}.json").unlink(missing_ok=True)
+        tagger.forget_event(slug)
         del db["events"][slug]
         save_db(db)
     return RedirectResponse("/admin", 303)

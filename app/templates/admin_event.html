@@ -50,6 +50,21 @@
 <form method="post" action="/admin/events/{{ slug }}/rescan" style="margin-top:10px"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="sec">{{ i('refresh', 16) }} Rescan folder</button></form>
 </div>
 
+<h2 id="tags">Auto tags</h2>
+<div class="card" data-live="tags">
+{% if not tagging.enabled %}<p class="mut" style="margin:0">Auto tagging is off. Set <code>AUTO_TAG=1</code> in <code>.env</code> to have Claude tag photos so guests can filter them.</p>
+{% else %}<div class="row" style="justify-content:space-between">
+<span><b>{{ tagging.tagged }} of {{ tagging.total }}</b> photos tagged
+{% if tagging.total %}<span class="bar" style="display:inline-block;width:140px;height:8px;vertical-align:middle;margin:0 0 0 8px"><span style="display:block;height:100%;width:{{ (100 * tagging.tagged / tagging.total)|round|int }}%;background:var(--acc);border-radius:inherit"></span></span>{% endif %}</span>
+<form method="post" action="/admin/events/{{ slug }}/tag-now"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="sec">{{ i('refresh', 16) }} Tag now</button></form></div>
+<p class="mut" style="margin:8px 0 0;{% if tagging.state == 'error' %}color:var(--bad){% endif %}">
+{% if tagging.state == 'working' %}{{ tagging.msg }}.{% elif tagging.state == 'waiting' %}{{ tagging.msg }}. New photos stay untagged until then.
+{% elif tagging.state == 'error' %}Problem: {{ tagging.msg }}. Trying again in a few minutes.
+{% elif tagging.tagged < tagging.total %}Waiting to start. New uploads get tagged about a minute after they land.
+{% else %}All done. New uploads get tagged about a minute after they land.{% endif %}
+Uses Claude Code ({{ tagging.model }}) on your subscription.</p>{% endif %}
+</div>
+
 <h2 class="row" style="justify-content:space-between"><span data-live="count">Photos ({{ items|length }})</span>
 <span class="row" style="font-size:15px;font-weight:normal">
 <button class="sec" type="button" id="selbtn" onclick="toggleSelect()">{{ i('select', 18) }} <span>Select</span></button>

@@ -1,0 +1,20 @@
+{% if tags %}{% include "_filter.html" %}
+<style>
+.tagrow{margin:6px 0 4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.tagrow .chip{white-space:nowrap}.tagrow .lbl{font-size:13px;margin-right:2px}
+.tagrow .more{display:none}.tagrow.open .more{display:inline-block}
+@media (pointer:coarse){ .tagrow,.tagrow.open{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-left:-16px;margin-right:-16px;padding:0 16px;-webkit-overflow-scrolling:touch}
+  .tagrow::-webkit-scrollbar{display:none} .tagrow .more{display:inline-block} .tagrow #tagmore{display:none} }
+</style>
+<div class="tagrow" id="tagrow"><span class="mut lbl">Show</span>
+<button type="button" class="chip on" data-tag="*">Everything</button>
+{% for t, n in tags %}<button type="button" class="chip{% if loop.index > 14 %} more{% endif %}" data-tag="{{ t }}">{{ t }} <span class="mut">{{ n }}</span></button>{% endfor %}
+{% if tags|length > 14 %}<button type="button" class="chip" id="tagmore" onclick="this.parentNode.classList.add('open'); this.remove()">{{ tags|length - 14 }} more…</button>{% endif %}
+</div>
+<script>
+document.addEventListener('click', e => { const c = e.target.closest('#tagrow .chip[data-tag]'); if (!c) return;
+  const pick = c.classList.contains('on') && c.dataset.tag !== '*' ? '*' : c.dataset.tag;   // tap again to clear
+  document.querySelectorAll('#tagrow .chip[data-tag]').forEach(x => x.classList.toggle('on', x.dataset.tag === pick));
+  window.galleryFilter.tag = pick; window.applyGalleryFilter();
+});
+</script>{% endif %}
