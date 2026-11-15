@@ -17,6 +17,8 @@ The app listens on `127.0.0.1:8100`. The Cloudflare tunnel points `share.tamairn
 - Full screen viewer with swipe/arrow keys and the capture time
 - **Save to Photos** on phones (straight into the camera roll via the share sheet, 20 at a time)
 - Download one, **select several and download as a zip**, select a whole day, or download everything
+- Picking is easy on phones: a big **Select** button (with a one-time tip), or press and hold any photo and slide to pick a run. A top bar shows how many are picked with Select all. You can also pick from the full screen viewer. Shift-click picks a run on a computer
+- Picks survive a page reload, and photos you've already saved get a small **Saved** badge so you can see what's left
 - Optional: password and expiry date
 
 **Auto tags**

@@ -43,6 +43,32 @@
 @keyframes up{from{transform:translateY(100%)}}
 #job h3{margin:0 0 4px;font-size:19px}#job .bar{height:8px;margin:14px 0}
 #job .big[disabled]{background:#2a2a2e;color:#aaa}
+/* ---- picking photos ---- */
+.grid .it{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.grid .it img,.grid .it video{transition:transform .15s,opacity .15s}
+.selecting .it .chk{width:28px;height:28px;box-shadow:0 0 6px rgba(0,0,0,.5)}
+.it.sel{outline:3px solid var(--acc);outline-offset:-3px}
+.it.sel img,.it.sel video{transform:scale(.9);opacity:1;border-radius:6px}
+.it.sel .chk::after{font-size:16px;font-weight:700}
+.it .svd{position:absolute;right:5px;bottom:5px;display:none;align-items:center;gap:3px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;
+  padding:2px 7px 2px 5px;border-radius:999px;pointer-events:none}
+.it.saved .svd{display:inline-flex}
+#selhead{display:none}
+#mbar .big.sec{flex:none;padding-left:16px;padding-right:16px;background:#2a2a2e}
+#tip{position:fixed;left:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:9;max-width:280px;background:#fff;color:#111;border-radius:14px;
+  padding:12px 14px;font-size:15px;line-height:1.35;box-shadow:0 8px 30px rgba(0,0,0,.5);animation:tin .25s ease-out}
+#tip::after{content:"";position:absolute;left:34px;bottom:-8px;border:8px solid transparent;border-bottom:0;border-top-color:#fff}
+#lb .pick.on,#lbbar .pick.on{color:var(--acc)}
+@media (pointer:coarse){
+  .selecting-page #selhead{display:flex;position:fixed;left:0;right:0;top:0;z-index:8;align-items:center;justify-content:space-between;gap:8px;
+    padding:calc(8px + env(safe-area-inset-top)) 8px 8px;background:rgba(18,18,20,.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border-bottom:1px solid #2a2a2e;animation:dn .18s ease-out}
+  #selhead button{background:none;color:var(--acc);font-weight:600;font-size:16px;padding:10px 8px;min-height:44px}
+  #selhead b{font-size:17px;text-align:center;flex:1}
+}
+@keyframes dn{from{transform:translateY(-100%)}}
+.lbopen.selecting-page #selhead{display:none}
+@media (pointer:coarse){ #toasts{bottom:calc(92px + env(safe-area-inset-bottom))} }
 </style>{% endblock %}
 {% block body %}
 <div class="hero" {% if cover %}style="background-image:url('/e/{{ token }}/preview/{{ cover.name|q }}?v={{ cover.v }}')"{% endif %}><div class="in">
@@ -72,20 +98,23 @@
 <div class="it {% if it.video %}vid{% endif %}" data-i="{{ loop.index0 }}" data-day="{{ it.day }}" data-by="{{ it.by }}" data-tags="{{ it.tags|join('|') }}">
 {% if it.by and ev.uploaders.get(it.by) %}<span class="byb" style="--c:{{ ev.uploaders[it.by].colour }}" title="{{ ev.uploaders[it.by].name }}"></span>{% endif %}
 {% if it.video %}<video src="/e/{{ token }}/file/{{ it.name|q }}?v={{ it.v }}#t=0.1" preload="metadata" muted playsinline></video>
-{% else %}<img loading="lazy" decoding="async" src="/e/{{ token }}/thumb/{{ it.name|q }}?v={{ it.v }}" alt="">{% endif %}<span class="chk"></span><span class="tm">{{ it.time }}</span>
+{% else %}<img loading="lazy" decoding="async" draggable="false" src="/e/{{ token }}/thumb/{{ it.name|q }}?v={{ it.v }}" alt="">{% endif %}<span class="chk"></span><span class="tm">{{ it.time }}</span><span class="svd">{{ i('check', 12) }}Saved</span>
 </div>{% if loop.last %}</div>{% endif %}{% endfor %}</div>
 <form method="post" action="/e/{{ token }}/download.zip" id="selform"></form>
 
-{% if items %}<div id="mbar">
+{% if items %}<div id="selhead">
+  <button type="button" onclick="toggleSelect()">Cancel</button>
+  <b id="sh-count">Tap photos to pick</b>
+  <button type="button" id="sh-all" onclick="selAll()">Select all</button>
+</div>
+<div id="mbar">
   <span id="mb-normal" style="display:contents">
-    <button class="tb" type="button" onclick="toggleSelect()">{{ i('select', 24) }}Select</button>
+    <button class="big sec" type="button" onclick="toggleSelect()">{{ i('select', 22) }} Select</button>
     <button class="big save-only" type="button" onclick="saveAll()">{{ i('photos', 22) }} <span>Save all<span class="opt">&nbsp;to Photos</span></span></button>
     <a class="btn big dl-only" href="/e/{{ token }}/download.zip">{{ i('download', 22) }} Download all</a>
     <a class="btn tb save-only" href="/e/{{ token }}/download.zip">{{ i('download', 24) }}ZIP file</a>
   </span>
   <span id="mb-select" style="display:none">
-    <button class="tb" type="button" onclick="toggleSelect()">{{ i('x', 24) }}Cancel</button>
-    <button class="tb" type="button" onclick="selAll()">{{ i('all', 24) }}All</button>
     <button class="big save-only" type="button" id="mb-save" onclick="saveSelectedM()" disabled>Tap to pick</button>
     <button class="big dl-only" type="button" id="mb-dl" onclick="dlSelected()" disabled>Tap to pick</button>
     <button class="tb save-only" type="button" id="mb-zip" onclick="if (grid.querySelector('.sel')) dlSelected()">{{ i('download', 24) }}ZIP file</button>
@@ -105,15 +134,17 @@
 
 
 <div id="lb"><div class="top"><span id="cap" class="mut"></span>
-<span class="row"><a id="dl" class="btn">{{ i('download', 18) }} Download original</a><button class="sec iconbtn close" onclick="closeLb()" aria-label="Close">{{ i('x', 22) }}</button></span></div>
+<span class="row"><button class="sec pick" type="button" onclick="lbPick()">{{ i('select', 18) }} <span class="pl">Select</span></button><a id="dl" class="btn">{{ i('download', 18) }} Download original</a><button class="sec iconbtn close" onclick="closeLb()" aria-label="Close">{{ i('x', 22) }}</button></span></div>
 <div id="lbbar">
+<button class="tb pick" type="button" onclick="lbPick()">{{ i('select', 24) }}<span class="pl">Select</span></button>
 <button class="big save-only" type="button" onclick="saveCurrent()">{{ i('photos', 22) }} Save to Photos</button>
 <a class="btn big dl-only" id="dl2">{{ i('download', 22) }} Download original</a>
 <a class="btn tb save-only" id="dl3">{{ i('download', 24) }}Original</a></div>
 <button class="nav" id="prev" onclick="step(-1)" aria-label="Previous">{{ i('left', 34) }}</button><div id="media"></div><button class="nav" id="next" onclick="step(1)" aria-label="Next">{{ i('right', 34) }}</button></div>
 <script>
 if (sessionStorage.keepY) { const y = +sessionStorage.keepY; delete sessionStorage.keepY; addEventListener('load', () => scrollTo(0, y)); }
-const IC = {photos: {{ i('photos', 22)|string|tojson }}, download: {{ i('download', 18)|string|tojson }}, check: {{ i('check', 22)|string|tojson }}};
+const IC = {photos: {{ i('photos', 22)|string|tojson }}, download: {{ i('download', 18)|string|tojson }}, check: {{ i('check', 22)|string|tojson }},
+  select: {{ i('select', 24)|string|tojson }}, checked: {{ i('select', 24, cls='on')|string|tojson }}};
 const items = {{ items|tojson }}, tok = {{ token|tojson }}, enc = n => encodeURIComponent(n);
 const who = Object.fromEntries(({{ (legend or [])|tojson }}).map(l => [l.id, l.name]));
 // tell the server what got looked at / saved (Cloudflare's cache hides most of it from the server)
@@ -131,43 +162,123 @@ function show(){
   document.getElementById('dl').href = `/e/${tok}/file/${n}?dl=1`;
   for (const id of ['dl2', 'dl3']) { const a = document.getElementById(id); if (a) a.href = `/e/${tok}/file/${n}?dl=1`; }
   document.getElementById('cap').textContent = `${it.when}` + (it.by && who[it.by] ? `  ·  by ${who[it.by]}` : '') + `  ·  ${cur+1} / ${items.length}`;
+  drawPick();
   for (const d of [1, -1]) { const nb = items[(cur + d + items.length) % items.length]; if (!nb.video) new Image().src = `/e/${tok}/preview/${enc(nb.name)}?v=${nb.v}`; }
 }
-function openLb(i){ cur = i; show(); lb.classList.add('on'); document.body.style.overflow = 'hidden'; }
-function closeLb(){ lb.classList.remove('on'); m.innerHTML = ''; document.body.style.overflow = ''; }
+function openLb(i){ cur = i; show(); lb.classList.add('on'); document.body.style.overflow = 'hidden'; document.body.classList.add('lbopen'); }
+function closeLb(){ lb.classList.remove('on'); m.innerHTML = ''; document.body.style.overflow = ''; document.body.classList.remove('lbopen'); }
 function step(d){ for (let k = 0; k < items.length; k++) { cur = (cur + d + items.length) % items.length;
   if (!grid.querySelector(`.it[data-i="${cur}"]`).classList.contains('hid')) break; } show(); }
 document.onkeydown = e => { if (!lb.classList.contains('on')) return;
   if (e.key === 'Escape') closeLb(); if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1); };
 let sx = null; lb.ontouchstart = e => sx = e.touches[0].clientX;
 lb.ontouchend = e => { if (sx === null) return; const dx = e.changedTouches[0].clientX - sx; if (Math.abs(dx) > 50) step(dx < 0 ? 1 : -1); sx = null; };
+// ---------- picking photos ----------
+// Tap Select (or press and hold any photo) to start picking. Hold and slide across photos to pick a run of them.
+const SELKEY = 'sel:' + tok, SAVEDKEY = 'saved:' + tok;
+const store = (s, k, v) => { try { v === undefined ? s.removeItem(k) : s.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const load = (s, k) => { try { return JSON.parse(s.getItem(k) || 'null'); } catch (e) { return null; } };
+const tiles = () => [...grid.querySelectorAll('.it:not(.hid)')];
+const selTiles = () => [...grid.querySelectorAll('.it.sel:not(.hid)')];
+let suppressClick = 0, lastTap = null, tipT = null;
 grid.addEventListener('click', e => {
   const sd = e.target.closest('.selday');
   if (sd) { e.preventDefault(); if (!selecting) toggleSelect();
-    const tiles = [...grid.querySelectorAll(`.it[data-day="${sd.dataset.day}"]:not(.hid)`)], all = tiles.every(t => t.classList.contains('sel'));
-    tiles.forEach(t => t.classList.toggle('sel', !all)); upd(); return; }
+    const t = [...grid.querySelectorAll(`.it[data-day="${sd.dataset.day}"]:not(.hid)`)], all = t.every(x => x.classList.contains('sel'));
+    t.forEach(x => x.classList.toggle('sel', !all)); upd(); return; }
   const it = e.target.closest('.it'); if (!it) return;
-  if (selecting) { it.classList.toggle('sel'); upd(); } else openLb(+it.dataset.i); });
-function toggleSelect(){ selecting = !selecting; grid.classList.toggle('selecting', selecting);
+  if (Date.now() < suppressClick) return;
+  if (!selecting) return openLb(+it.dataset.i);
+  if (e.shiftKey && lastTap && lastTap.isConnected) {   // desktop: shift-click picks everything in between
+    const t = tiles(), a = t.indexOf(lastTap), b = t.indexOf(it), on = !it.classList.contains('sel');
+    t.slice(Math.min(a, b), Math.max(a, b) + 1).forEach(x => x.classList.toggle('sel', on));
+  } else it.classList.toggle('sel');
+  lastTap = it; upd(); });
+grid.addEventListener('contextmenu', e => { if (e.target.closest('.it')) e.preventDefault(); });
+// press and hold -> start picking; keep holding and slide to pick a run
+let press = null;
+grid.addEventListener('touchstart', e => {
+  const it = e.target.closest('.it'); if (!it || e.touches.length > 1) return;
+  const t0 = e.touches[0];
+  press = {it, x: t0.clientX, y: t0.clientY, drag: false, timer: setTimeout(() => {
+    if (!press) return;
+    if (!selecting) toggleSelect();
+    const t = tiles();
+    press.drag = true; press.list = t; press.anchor = t.indexOf(it); press.on = !it.classList.contains('sel');
+    press.before = t.map(x => x.classList.contains('sel'));
+    it.classList.toggle('sel', press.on); upd(); dismissTip();
+    try { navigator.vibrate && navigator.vibrate(12); } catch (err) {}
+  }, 420)};
+}, {passive: true});
+document.addEventListener('touchmove', e => {
+  if (!press) return;
+  const t0 = e.touches[0];
+  if (!press.drag) { if (Math.hypot(t0.clientX - press.x, t0.clientY - press.y) > 10) { clearTimeout(press.timer); press = null; } return; }
+  e.preventDefault(); press.y = t0.clientY; press.x = t0.clientX; dragTo();
+  if (!press.scroll) press.scroll = setInterval(edgeScroll, 30);
+}, {passive: false});
+function dragTo(){
+  const el = document.elementFromPoint(press.x, press.y), it = el && el.closest('.it'); if (!it) return;
+  const k = press.list.indexOf(it); if (k < 0) return;
+  const lo = Math.min(k, press.anchor), hi = Math.max(k, press.anchor);
+  press.list.forEach((x, j) => x.classList.toggle('sel', j >= lo && j <= hi ? press.on : press.before[j])); upd();
+}
+function edgeScroll(){   // slide to the top/bottom edge to keep picking past the screen
+  if (!press || !press.drag) return;
+  const top = 90, bot = innerHeight - 130, v = press.y < top ? -(top - press.y) / 3 : press.y > bot ? (press.y - bot) / 3 : 0;
+  if (v) { scrollBy(0, v); dragTo(); }
+}
+const endPress = () => { if (!press) return; clearTimeout(press.timer); clearInterval(press.scroll);
+  if (press.drag) suppressClick = Date.now() + 350; press = null; };
+document.addEventListener('touchend', endPress); document.addEventListener('touchcancel', endPress);
+function toggleSelect(){ selecting = !selecting; grid.classList.toggle('selecting', selecting); document.body.classList.toggle('selecting-page', selecting);
   document.querySelector('#selbtn span').textContent = selecting ? 'Cancel' : 'Select';
   const mn = document.getElementById('mb-normal'), ms = document.getElementById('mb-select');
   if (mn) { mn.style.display = selecting ? 'none' : 'contents'; ms.style.display = selecting ? 'contents' : 'none'; }
-  if (!selecting) grid.querySelectorAll('.sel').forEach(e => e.classList.remove('sel')); upd(); }
+  if (!selecting) grid.querySelectorAll('.sel').forEach(e => e.classList.remove('sel'));
+  dismissTip(); upd(); }
 // drop the optional words from the main bar button if they don't fit this screen
 function fitBar(){ document.querySelectorAll('#mbar .big').forEach(b => { b.querySelectorAll('.opt').forEach(o => o.style.display = '');
   if (b.scrollWidth > b.clientWidth + 1) b.querySelectorAll('.opt').forEach(o => o.style.display = 'none'); }); }
 addEventListener('resize', fitBar);
-function selAll(){ const t = [...grid.querySelectorAll('.it:not(.hid)')], all = t.every(x => x.classList.contains('sel')); t.forEach(x => x.classList.toggle('sel', !all)); upd(); }
-function upd(){ const n = grid.querySelectorAll('.sel').length, b = document.getElementById('dlsel');
+function selAll(){ const t = tiles(), all = t.every(x => x.classList.contains('sel')); t.forEach(x => x.classList.toggle('sel', !all)); upd(); }
+function upd(){ const sel = selTiles(), n = sel.length, all = n && n === tiles().length, b = document.getElementById('dlsel');
   const ms = document.getElementById('mb-save'), md = document.getElementById('mb-dl');
-  if (ms) { ms.disabled = !n; ms.innerHTML = n ? `${IC.photos} <span>Save ${n}<span class="opt">&nbsp;to Photos</span></span>` : 'Tap to pick'; fitBar(); }
+  if (ms) { ms.disabled = !n; ms.innerHTML = n ? `${IC.photos} <span>Save ${n}<span class="opt">&nbsp;to Photos</span></span>` : 'Tap photos to pick'; fitBar(); }
   if (md) { md.disabled = !n; md.innerHTML = n ? `${IC.download} Download ${n}` : 'Tap photos to pick'; }
-  document.getElementById('selall').style.display = selecting ? '' : 'none';
+  const sh = document.getElementById('sh-count'); if (sh) sh.textContent = n ? `${n} selected` : 'Tap photos to pick';
+  const sa = document.getElementById('sh-all'); if (sa) sa.textContent = all ? 'Deselect all' : 'Select all';
+  const s2 = document.getElementById('selall'); s2.style.display = selecting ? '' : 'none'; s2.textContent = all ? 'Deselect all' : 'Select all';
   b.style.display = n ? '' : 'none'; b.innerHTML = `${IC.download} Download ${n} selected (ZIP)`;
-  document.getElementById('selinfo').textContent = selecting ? (n ? '' : 'Tap photos to pick them') : ''; }
+  document.getElementById('selinfo').textContent = selecting ? (n ? `${n} selected` : 'Click photos to pick them (shift-click picks a run)') : '';
+  store(sessionStorage, SELKEY, selecting ? sel.map(t => items[+t.dataset.i].name) : undefined);
+  if (lb.classList.contains('on')) drawPick(); }
 function dlSelected(){ const f = document.getElementById('selform'); f.innerHTML = '';
-  grid.querySelectorAll('.sel').forEach(it => { const i = document.createElement('input'); i.type = 'hidden'; i.name = 'names'; i.value = items[+it.dataset.i].name; f.appendChild(i); });
-  f.submit(); }
+  const list = selTiles().map(t => items[+t.dataset.i]); if (!list.length) return;
+  list.forEach(it => { const i = document.createElement('input'); i.type = 'hidden'; i.name = 'names'; i.value = it.name; f.appendChild(i); });
+  f.submit(); markSaved(list.map(x => x.name)); toastMsg(`Downloading ${list.length} as a ZIP file`, false); }
+// pick from the full-screen viewer too
+function lbPick(){ const t = grid.querySelector(`.it[data-i="${cur}"]`); if (!t) return;
+  if (!selecting) toggleSelect(); t.classList.toggle('sel'); upd();
+  toast(t.classList.contains('sel') ? `Picked · ${selTiles().length} selected` : `Removed · ${selTiles().length} selected`); }
+function drawPick(){ const t = grid.querySelector(`.it[data-i="${cur}"]`), on = !!(t && t.classList.contains('sel'));
+  document.querySelectorAll('#lb .pick').forEach(b => { b.classList.toggle('on', on);
+    b.querySelector('.ico').outerHTML = on ? IC.checked : IC.select; b.querySelector('.pl').textContent = on ? 'Selected' : 'Select'; }); }
+// remember which photos this phone already saved, so people can see what's left
+const saved = new Set(load(localStorage, SAVEDKEY) || []);
+function paintSaved(){ grid.querySelectorAll('.it').forEach(t => t.classList.toggle('saved', saved.has(items[+t.dataset.i].name))); }
+function markSaved(names){ names.forEach(n => saved.add(n)); store(localStorage, SAVEDKEY, [...saved]); paintSaved(); }
+paintSaved();
+// bring picks back if the phone reloaded the page (iOS does this after the share sheet sometimes)
+(() => { const keep = load(sessionStorage, SELKEY); if (!keep) return; const want = new Set(keep);
+  toggleSelect(); grid.querySelectorAll('.it').forEach(t => t.classList.toggle('sel', want.has(items[+t.dataset.i].name))); upd(); })();
+// one-time hint on phones, pointing at the Select button
+function dismissTip(){ const t = document.getElementById('tip'); if (t) t.remove(); clearTimeout(tipT); }
+if (matchMedia('(pointer:coarse)').matches && document.getElementById('mbar') && !load(localStorage, 'pickTip') && !selecting) {
+  setTimeout(() => { if (selecting) return; const d = document.createElement('div'); d.id = 'tip';
+    d.innerHTML = '<b>Only want some?</b> Tap <b>Select</b>, then tap the photos you want. Or press and hold a photo and slide.';
+    d.onclick = dismissTip; document.body.appendChild(d); store(localStorage, 'pickTip', 1); tipT = setTimeout(dismissTip, 9000); }, 1200);
+}
 
 // ---------- Save to phone: Web Share API with files -> iOS "Save X Images", Android "Save to gallery" ----------
 // iOS needs a fresh tap for every share and copes with ~20 files at a time, so a big save is a series
@@ -234,12 +345,12 @@ async function shareCurrent(){
   catch (e) { if (job) job.sharing = false; if (e.name !== 'AbortError' && e.name !== 'NotAllowedError') toastMsg("Couldn't open the save menu, try again."); drawJob(); return false; }
   if (!job || job.gen !== gen) return true;
   job.sharing = false;
-  job.saved += files.length; seenQ.s.push(...cur.items.map(x => x.name)); sendStats(); cur.files = null; job.k++;   // drop saved files from memory
+  job.saved += files.length; seenQ.s.push(...cur.items.map(x => x.name)); sendStats(); markSaved(cur.items.map(x => x.name)); cur.files = null; job.k++;   // drop saved files from memory
   prefetch(job.k); drawJob();
   if (job.saved >= job.total) setTimeout(() => { if (job && job.saved >= job.total) cancelJob(); }, 1600);
   return true;
 }
-function toastMsg(m){ window.toast ? toast(m, true) : alert(m); }
+function toastMsg(m, bad = true){ window.toast ? toast(m, bad) : alert(m); }
 async function startJob(list){
   if (!list.length) return;
   job = {batches: plan(list), total: list.length, k: 0, saved: 0, gen: Math.random()};
