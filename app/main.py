@@ -11,6 +11,7 @@ import segno
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse, FileResponse, StreamingResponse, Response
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import iterate_in_threadpool
 from starlette.middleware.sessions import SessionMiddleware
 from PIL import Image, ImageOps
 
@@ -106,10 +107,6 @@ def update_event(slug, fn):
         if slug in db["events"]:
             fn(db["events"][slug])
             save_db(db)
-
-
-def bump(slug, field):
-    update_event(slug, lambda ev: ev.__setitem__(field, ev.get(field, 0) + 1))
 
 
 def slugify(name):
@@ -433,8 +430,21 @@ def zip_stream(files):
     yield s.pop()
 
 
-def zip_response(files, name):
-    return StreamingResponse(zip_stream(files), media_type="application/zip",
+def zip_response(files, name, on_done=None):
+    """on_done(finished) runs once the ZIP has been fully sent, or the browser gave up part way."""
+    async def gen():
+        # async, so a browser hanging up closes this (and the open files) right away instead of leaving
+        # a half-read ZIP parked in a worker thread
+        it, finished = zip_stream(files), False
+        try:
+            async for chunk in iterate_in_threadpool(it):
+                yield chunk
+            finished = True
+        finally:
+            it.close()
+            if on_done:
+                on_done(finished)
+    return StreamingResponse(gen(), media_type="application/zip",
                              headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
@@ -504,6 +514,11 @@ def is_admin(request):
 
 def require_admin(request):
     if is_admin(request):
+        # note this browser's guest id once, so anything it did before you opened /admin is left out too
+        gv = stats.cookie_visitor(request.cookies.get(stats.COOKIE))
+        if gv and request.session.get("admin_gv") != gv:
+            request.session["admin_gv"] = gv
+            stats.log("admin_seen", request, who="admin")
         return
     if AUTH_MODE == "cloudflare":
         raise HTTPException(403, "Admin is protected by Cloudflare Access. Open it via https://" +
@@ -605,6 +620,22 @@ def guest_event(request, token):
     return slug, ev
 
 
+def tag_guest(request):
+    """Give this browser a random stats id (see stats.COOKIE) if it has none yet. Returns the new id or None.
+    Set it on request.state first so the very first hit already uses it, not the internet address."""
+    if stats.cookie_visitor(request.cookies.get(stats.COOKIE)):
+        return None
+    request.state.gv = stats.new_cookie_id()
+    return request.state.gv
+
+
+def set_guest_cookie(resp, gv):
+    if gv:
+        resp.set_cookie(stats.COOKIE, gv, max_age=400 * 86400, httponly=True, samesite="lax",
+                        secure=BASE_URL.startswith("https"))
+    return resp
+
+
 def actor(request, ev):
     """Who is doing this, for the stats: 'admin', an uploader id, or '' for a guest."""
     if request.session.get("admin"):
@@ -627,15 +658,12 @@ def event_page(request: Request, token: str):
         return templates.TemplateResponse(request, "gone.html", ctx(request, ev=ev, expired=expired(ev)), status_code=410)
     if not is_admin and not unlocked(request, ev):
         return templates.TemplateResponse(request, "unlock.html", ctx(request, ev=ev, error=None))
+    gv = tag_guest(request)
     stats.log("page_view", request, slug, who=actor(request, ev))
-    seen = request.session.setdefault("seen", [])
-    if not is_admin and token not in seen:
-        request.session["seen"] = (seen + [token])[-50:]
-        bump(slug, "views")
     items, cover = gallery_items(slug, ev)
-    return templates.TemplateResponse(request, "event.html", ctx(
+    return set_guest_cookie(templates.TemplateResponse(request, "event.html", ctx(
         request, ev=ev, token=token, items=items, cover=cover, legend=uploader_legend(ev, items), uploader=None,
-        tags=tag_counts(items)))
+        tags=tag_counts(items))), gv)
 
 
 @app.post("/e/{token}/unlock", response_class=HTMLResponse)
@@ -669,9 +697,10 @@ def original(request: Request, token: str, name: str, dl: int = 0):
     slug, ev = guest_event(request, token)
     p = get_file(slug, name)
     if dl:
-        if not request.session.get("admin"):
-            bump(slug, "downloads")
-        stats.log("download", request, slug, item=name, nbytes=p.stat().st_size, who=actor(request, ev))
+        # a resumed or split download asks for the rest with a Range header: that's the same download
+        rng = request.headers.get("range", "")
+        if not rng or rng.replace(" ", "").startswith("bytes=0-"):
+            stats.log("download", request, slug, item=name, nbytes=p.stat().st_size, who=actor(request, ev))
         # not edge-cached so the download counter stays right
         return BigFileResponse(p, filename=p.name, content_disposition_type="attachment",
                                headers={"Cache-Control": "private, max-age=3600"})
@@ -681,21 +710,25 @@ def original(request: Request, token: str, name: str, dl: int = 0):
 @app.get("/e/{token}/download.zip")
 def download_all(request: Request, token: str):
     slug, ev = guest_event(request, token)
-    if not request.session.get("admin"):
-        bump(slug, "downloads")
     items = media_files(slug, ev["sort"])
-    stats.log("zip", request, slug, n=len(items), nbytes=sum(i["size"] for i in items), who=actor(request, ev), detail="all")
-    return zip_response([(i["name"], i["path"]) for i in items], slugify(ev["name"]) + ".zip")
+    return zip_response([(i["name"], i["path"]) for i in items], slugify(ev["name"]) + ".zip",
+                        zip_logger(request, slug, ev, len(items), sum(i["size"] for i in items), "all"))
 
 
 @app.post("/e/{token}/download.zip")
 def download_selected(request: Request, token: str, names: list[str] = Form(...)):
     slug, ev = guest_event(request, token)
     files = [(n, get_file(slug, n)) for n in dict.fromkeys(names)]
-    if not request.session.get("admin"):
-        bump(slug, "downloads")
-    stats.log("zip", request, slug, n=len(files), nbytes=sum(f.stat().st_size for _, f in files), who=actor(request, ev), detail="selected")
-    return zip_response(files, slugify(ev["name"]) + f"-{len(files)}-photos.zip")
+    return zip_response(files, slugify(ev["name"]) + f"-{len(files)}-photos.zip",
+                        zip_logger(request, slug, ev, len(files), sum(f.stat().st_size for _, f in files), "selected"))
+
+
+def zip_logger(request, slug, ev, n, nbytes, what):
+    """Only count a ZIP once it has actually been sent in full. Browsers (iOS especially) sometimes start
+    a download and drop it, and a cancelled "Download all" shouldn't count as every photo taken home."""
+    who = actor(request, ev)
+    return lambda finished: stats.log("zip" if finished else "zip_cancel", request, slug, n=n, nbytes=nbytes,
+                                      who=who, detail=what)
 
 
 @app.post("/e/{token}/beacon")
@@ -724,8 +757,10 @@ async def beacon(request: Request, token: str):
                 return get_file(slug, n).stat().st_size
             except HTTPException:
                 return 0
-        total = await anyio.to_thread.run_sync(lambda: sum(size(n) for n in saved))
-        stats.log("save", request, slug, n=len(saved), nbytes=total, who=who)
+        sizes = await anyio.to_thread.run_sync(lambda: [size(n) for n in saved])
+        stats.log("save", request, slug, n=len(saved), nbytes=sum(sizes), who=who)
+        for n, b in zip(saved, sizes):  # per photo, only for "Most popular" (the row above is the one that counts)
+            stats.log("save_item", request, slug, item=n, nbytes=b, who=who)
     return Response(status_code=204)
 
 
@@ -734,11 +769,12 @@ def uploader_page(request: Request, utoken: str):
     """Secret upload link for one named person. Works even if the public link is off or password protected."""
     slug, ev, uid, u = find_uploader(utoken)
     request.session["up:" + ev["token"]] = uid
+    gv = tag_guest(request)
     stats.log("uploader_open", request, slug, who=uid)
     items, cover = gallery_items(slug, ev)
-    return templates.TemplateResponse(request, "event.html", ctx(
+    return set_guest_cookie(templates.TemplateResponse(request, "event.html", ctx(
         request, ev=ev, token=ev["token"], items=items, cover=cover, legend=uploader_legend(ev, items),
-        uploader={**u, "id": uid, "utoken": utoken}, chunk_size=CHUNK_SIZE, tags=tag_counts(items)))
+        uploader={**u, "id": uid, "utoken": utoken}, chunk_size=CHUNK_SIZE, tags=tag_counts(items))), gv)
 
 
 @app.post("/u/{utoken}/upload")
@@ -799,7 +835,7 @@ def admin_home(request: Request):
         events.append({"slug": slug, **ev, "count": len(items), "bytes": sum(i["size"] for i in items),
                        "cover_name": cover, "expired": expired(ev), "url": share_url(request, ev["token"])})
     events.sort(key=lambda e: (e["date"] or datetime.fromtimestamp(e["created"]).date().isoformat()), reverse=True)
-    return templates.TemplateResponse(request, "admin.html", ctx(request, events=events))
+    return templates.TemplateResponse(request, "admin.html", ctx(request, events=events, counts=event_totals()))
 
 
 @app.post("/admin/events")
@@ -836,7 +872,7 @@ def admin_event(request: Request, slug: str):
         request, slug=slug, ev=ev, items=items, url=share_url(request, ev["token"]), sorts=SORTS,
         legend=uploader_legend(ev, items), uploaders=uploaders,
         colours={uid: u["colour"] for uid, u in ev.get("uploaders", {}).items()},
-        total=sum(i["size"] for i in items), expired=expired(ev),
+        total=sum(i["size"] for i in items), expired=expired(ev), counts=event_totals().get(slug, {}),
         folder=f"{HOST_PHOTOS_PATH.rstrip('/')}/events/{slug}", ssh_target=SSH_TARGET,
         chunk_size=CHUNK_SIZE, missing_thumbs=sum(1 for i in items if not i["video"] and not cache_path(slug, "thumb", i["name"]).exists()),
         rescanned=request.query_params.get("rescanned"), saved=request.query_params.get("saved"),
@@ -1041,6 +1077,35 @@ def _label_path(path):
     return path
 
 
+# Which hits count as a guest doing something (not errors, wrong passwords, abandoned ZIPs, bookkeeping)
+ACTIVE = "kind NOT IN ('error','unlock_fail','zip_cancel','admin_seen','save_item')"
+SERVER_ERR = "kind='error' AND CAST(substr(detail, instr(detail, ' ') + 1) AS INTEGER) NOT BETWEEN 1 AND 499"
+
+
+def _admin_filter(con):
+    """Leave out you: anything done while signed in as admin, plus anything a browser of yours did before
+    you opened /admin in it (it carries the same guest cookie). Only cookie ids, never internet addresses,
+    so guests on your home Wi-Fi still count."""
+    con.execute("CREATE TEMP TABLE IF NOT EXISTS adm (v TEXT PRIMARY KEY)")
+    con.execute("DELETE FROM adm")
+    con.execute("INSERT OR IGNORE INTO adm SELECT DISTINCT visitor FROM hits WHERE who='admin' AND visitor LIKE 'c%'")
+    return "who != 'admin' AND visitor NOT IN (SELECT v FROM adm)"
+
+
+def event_totals():
+    """All-time (as far back as the stats go) people and files taken home per event, for the events list."""
+    con = stats.connect()
+    try:
+        notme = _admin_filter(con)
+        return {r[0]: {"people": r[1], "files": r[2] or 0} for r in con.execute(f"""SELECT event,
+            COUNT(DISTINCT CASE WHEN {ACTIVE} THEN visitor END), SUM(CASE WHEN {FILES_OUT} THEN n END)
+            FROM hits WHERE {notme} AND device != 'bot' AND event != '' GROUP BY event""")}
+    except sqlite3.Error:
+        return {}
+    finally:
+        con.close()
+
+
 @app.get("/admin/stats.json")
 def stats_json(request: Request, range: str = "7d", event: str = ""):
     require_admin(request)
@@ -1058,33 +1123,41 @@ def stats_json(request: Request, range: str = "7d", event: str = ""):
 
     con = stats.connect()
     con.row_factory = sqlite3.Row
-    w = "ts >= ? AND who != 'admin'"
-    args = [start]
-    if event:
-        w += " AND event = ?"; args.append(event)
-    guest = w + " AND device != 'bot'"
+    ev_w = " AND event = ?" if event else ""
+    args = [start] + ([event] if event else [])
+    w = f"ts >= ?{ev_w} AND " + _admin_filter(con)  # everyone but you, bots included
+    guest = w + " AND device != 'bot'"                 # real people
     q = lambda sql, a=(): con.execute(sql, a).fetchall()
     one = lambda sql, a=(): con.execute(sql, a).fetchone()
+    # a "view" is one person looking at one photo: flicking back and forth over the same photo counts once
+    pv = "visitor || '/' || event || '/' || item"
 
     t = one(f"""SELECT
-        COUNT(DISTINCT CASE WHEN kind != 'error' THEN visitor END) visitors,
+        COUNT(DISTINCT CASE WHEN {ACTIVE} THEN visitor END) visitors,
         SUM(kind='page_view') page_views,
-        SUM(CASE WHEN kind='photo_view' THEN n END) photo_views,
+        COUNT(DISTINCT CASE WHEN kind='photo_view' THEN {pv} END) photo_views,
+        SUM(CASE WHEN kind='photo_view' THEN n END) photo_opens,
         COUNT(DISTINCT CASE WHEN kind='photo_view' THEN event||'/'||item END) photos_seen,
-        SUM(CASE WHEN kind='video_play' THEN n END) video_plays,
+        COUNT(DISTINCT CASE WHEN kind='photo_view' THEN visitor END) viewers,
+        COUNT(DISTINCT CASE WHEN kind='video_play' THEN {pv} END) video_plays,
+        COUNT(DISTINCT CASE WHEN kind='video_play' THEN event||'/'||item END) videos_seen,
         SUM(CASE WHEN {FILES_OUT} THEN n END) files_out,
         SUM(CASE WHEN {FILES_OUT} THEN bytes END) bytes_files_out,
+        COUNT(DISTINCT CASE WHEN {FILES_OUT} THEN visitor END) takers,
         SUM(CASE WHEN kind='download' THEN n END) single_dl,
-        SUM(kind='zip') zips, SUM(CASE WHEN kind='zip' THEN n END) zip_files,
+        SUM(kind='zip') zips, SUM(CASE WHEN kind='zip' THEN n END) zip_files, SUM(kind='zip_cancel') zip_cancels,
         SUM(CASE WHEN kind='save' THEN n END) saves,
         SUM(CASE WHEN kind='upload' THEN n END) uploads, SUM(CASE WHEN kind='upload' THEN bytes END) upload_bytes,
         COUNT(DISTINCT CASE WHEN kind='upload' THEN who END) uploaders,
-        SUM(kind='error') errors, SUM(kind='unlock_fail') unlock_fails
+        SUM(kind='unlock_fail') unlock_fails
         FROM hits WHERE {guest}""", args)
     totals = {k: (t[k] or 0) for k in t.keys()}
+    # problems: server-side failures matter; 4xx is mostly bots poking at URLs that don't exist
+    e = one(f"SELECT SUM({SERVER_ERR}), SUM(kind='error') FROM hits WHERE ts >= ?", (start,))
+    totals["server_errors"], totals["not_found"] = e[0] or 0, (e[1] or 0) - (e[0] or 0)
+    totals["bot_visits"] = one(f"SELECT COUNT(*) FROM hits WHERE {w} AND device = 'bot' AND kind='page_view'", args)[0] or 0
     # your own uploads count too (they are real data moving), just not as "guest" activity
-    mine = one(f"SELECT SUM(n), SUM(bytes) FROM hits WHERE ts >= ? AND kind='upload' AND who='admin'"
-               + (" AND event = ?" if event else ""), args)
+    mine = one(f"SELECT SUM(n), SUM(bytes) FROM hits WHERE ts >= ?{ev_w} AND kind='upload' AND who='admin'", args)
     totals["my_uploads"], totals["my_upload_bytes"] = mine[0] or 0, mine[1] or 0
 
     tr = one("SELECT SUM(req), SUM(bytes_out), SUM(bytes_in), SUM(errors) FROM traffic WHERE minute >= ?", (int(start // 60),))
@@ -1099,10 +1172,10 @@ def stats_json(request: Request, range: str = "7d", event: str = ""):
         return out
     bk = f"CAST((ts - {start}) / {bucket} AS INTEGER)"
     ts = {
-        "visitors": series(f"SELECT {bk} b, COUNT(DISTINCT visitor) FROM hits WHERE {guest} AND kind != 'error' GROUP BY b", args),
-        "photo_views": series(f"SELECT {bk} b, SUM(n) FROM hits WHERE {guest} AND kind IN ('photo_view','video_play') GROUP BY b", args),
+        "visitors": series(f"SELECT {bk} b, COUNT(DISTINCT visitor) FROM hits WHERE {guest} AND {ACTIVE} GROUP BY b", args),
+        "photo_views": series(f"SELECT {bk} b, COUNT(DISTINCT {pv}) FROM hits WHERE {guest} AND kind IN ('photo_view','video_play') GROUP BY b", args),
         "files_out": series(f"SELECT {bk} b, SUM(n) FROM hits WHERE {guest} AND {FILES_OUT} GROUP BY b", args),
-        "uploads": series(f"SELECT {bk} b, SUM(n) FROM hits WHERE ts >= ? AND kind='upload'" + (" AND event = ?" if event else "") + " GROUP BY b", args),
+        "uploads": series(f"SELECT {bk} b, SUM(n) FROM hits WHERE {guest} AND kind='upload' GROUP BY b", args),
     }
     mb = f"CAST((minute * 60 - {start}) / {bucket} AS INTEGER)"
     ts["bytes_out"] = series(f"SELECT {mb} b, SUM(bytes_out) FROM traffic WHERE minute >= ? GROUP BY b", (int(start // 60),))
@@ -1110,20 +1183,21 @@ def stats_json(request: Request, range: str = "7d", event: str = ""):
     labels = [start + i * bucket for i in builtins.range(nb)]
 
     per_event = [dict(r) | {"name": names.get(r["event"], r["event"] or "(none)")} for r in q(f"""SELECT event,
-        COUNT(DISTINCT visitor) visitors, SUM(kind='page_view') page_views,
-        SUM(CASE WHEN kind IN ('photo_view','video_play') THEN n ELSE 0 END) views,
+        COUNT(DISTINCT CASE WHEN {ACTIVE} THEN visitor END) visitors, SUM(kind='page_view') page_views,
+        COUNT(DISTINCT CASE WHEN kind IN ('photo_view','video_play') THEN {pv} END) views,
         SUM(CASE WHEN {FILES_OUT} THEN n ELSE 0 END) files_out, SUM(CASE WHEN {FILES_OUT} THEN bytes ELSE 0 END) bytes_out,
+        COUNT(DISTINCT CASE WHEN {FILES_OUT} THEN visitor END) takers,
         SUM(CASE WHEN kind='upload' THEN n ELSE 0 END) uploads, SUM(CASE WHEN kind='upload' THEN bytes ELSE 0 END) upload_bytes,
-        MAX(ts) last FROM hits WHERE {guest} AND kind != 'error' AND event != '' GROUP BY event ORDER BY visitors DESC""", args)]
+        MAX(ts) last FROM hits WHERE {guest} AND {ACTIVE} AND event != '' GROUP BY event ORDER BY visitors DESC""", args)]
 
-    uploaders = [{"event": names.get(r["event"], r["event"]), "name": OWNER_NAME if r["who"] == "admin" else upname.get((r["event"], r["who"]), "?"),
+    uploaders = [{"event": names.get(r["event"], r["event"]), "name": OWNER_NAME + " (you)" if r["who"] == "admin" else upname.get((r["event"], r["who"]), "?"),
                   "colour": (evs.get(r["event"], {}).get("uploaders", {}).get(r["who"], {}) or {}).get("colour", "#9a9aa0"),
-                  "files": r["files"], "bytes": r["bytes"], "last": r["last"], "visits": 0}
-                 for r in q("SELECT event, who, SUM(n) files, SUM(bytes) bytes, MAX(ts) last FROM hits WHERE ts >= ? AND kind='upload'"
-                            + (" AND event = ?" if event else "") + " GROUP BY event, who ORDER BY files DESC", args)]
+                  "files": r["files"], "bytes": r["bytes"], "last": r["last"]}
+                 for r in q(f"SELECT event, who, SUM(n) files, SUM(bytes) bytes, MAX(ts) last FROM hits WHERE ts >= ?{ev_w} AND kind='upload'"
+                            " GROUP BY event, who ORDER BY files DESC", args)]
     # people who opened an upload link but haven't sent anything yet are worth seeing too
-    opened = {(r[0], r[1]): r[2] for r in q("SELECT event, who, MAX(ts) FROM hits WHERE ts >= ? AND kind='uploader_open'"
-                                           + (" AND event = ?" if event else "") + " GROUP BY event, who", args)}
+    opened = {(r[0], r[1]): r[2] for r in q(f"SELECT event, who, MAX(ts) FROM hits WHERE ts >= ?{ev_w} AND kind='uploader_open'"
+                                           " GROUP BY event, who", args)}
     have = {(u["event"], u["name"]) for u in uploaders}
     for (slug, uid), last in opened.items():
         nm = upname.get((slug, uid), "?")
@@ -1133,21 +1207,22 @@ def stats_json(request: Request, range: str = "7d", event: str = ""):
 
     top = [dict(r) | {"name": names.get(r["event"], r["event"]), "token": evs.get(r["event"], {}).get("token", ""),
                       "slug": r["event"]} for r in q(f"""SELECT event, item,
-        SUM(CASE WHEN kind IN ('photo_view','video_play') THEN n ELSE 0 END) views,
-        SUM(CASE WHEN kind IN ('download','save') THEN n ELSE 0 END) downloads
-        FROM hits WHERE {guest} AND item != '' AND kind IN ('photo_view','video_play','download','save')
-        GROUP BY event, item ORDER BY views + downloads * 3 DESC LIMIT 12""", args)]
-    devices = [dict(r) for r in q(f"SELECT device k, COUNT(DISTINCT visitor) v FROM hits WHERE {w} AND kind != 'error' GROUP BY device ORDER BY v DESC", args)]
-    countries = [dict(r) for r in q(f"SELECT country k, COUNT(DISTINCT visitor) v FROM hits WHERE {guest} AND kind != 'error' GROUP BY country ORDER BY v DESC LIMIT 8", args)]
+        COUNT(DISTINCT CASE WHEN kind IN ('photo_view','video_play') THEN visitor END) views,
+        SUM(CASE WHEN kind IN ('download','save_item') THEN n ELSE 0 END) downloads
+        FROM hits WHERE {guest} AND item != '' AND kind IN ('photo_view','video_play','download','save_item')
+        GROUP BY event, item ORDER BY views + downloads * 2 DESC, MAX(ts) DESC LIMIT 12""", args)]
+    devices = [dict(r) for r in q(f"SELECT device k, COUNT(DISTINCT visitor) v FROM hits WHERE {w} AND {ACTIVE} GROUP BY device ORDER BY v DESC", args)]
+    countries = [dict(r) for r in q(f"SELECT country k, COUNT(DISTINCT visitor) v FROM hits WHERE {guest} AND {ACTIVE} GROUP BY country ORDER BY v DESC LIMIT 8", args)]
     recent = [dict(r) for r in q(f"""SELECT ts, event, kind, visitor, item, n, bytes, who, country, device, detail FROM hits
-        WHERE {w} AND kind NOT IN ('photo_view') ORDER BY ts DESC LIMIT 60""", args)]
+        WHERE {w} AND kind NOT IN ('photo_view','admin_seen','error','save_item') ORDER BY ts DESC LIMIT 60""", args)]
     for r in recent:
         r["ev_name"] = names.get(r["event"], r["event"])
         r["who_name"] = upname.get((r["event"], r["who"]), "") if r["who"] else ""
-    errors = [dict(r) for r in q("SELECT ts, item, detail, visitor, country, device FROM hits WHERE ts >= ? AND kind='error' ORDER BY ts DESC LIMIT 25", (start,))]
-    for r in errors + [r for r in recent if r["kind"] == "error"]:
+    errors = [dict(r) | {"server": bool(r["server"])} for r in q(
+        f"SELECT ts, item, detail, visitor, country, device, {SERVER_ERR} server FROM hits WHERE ts >= ? AND kind='error' ORDER BY server DESC, ts DESC LIMIT 25", (start,))]
+    for r in errors:
         r["item"] = _label_path(r["item"])
-    err_paths = [dict(r) for r in q("SELECT detail, COUNT(*) c FROM hits WHERE ts >= ? AND kind='error' GROUP BY detail ORDER BY c DESC LIMIT 6", (start,))]
+    err_paths = [dict(r) for r in q(f"SELECT detail, {SERVER_ERR} server, COUNT(*) c FROM hits WHERE ts >= ? AND kind='error' GROUP BY detail ORDER BY server DESC, c DESC LIMIT 6", (start,))]
     con.close()
     return {"range": range, "bucket": bucket, "labels": labels, "totals": totals, "traffic": traffic, "series": ts,
             "events": per_event, "uploaders": uploaders, "top": top, "devices": devices, "countries": countries,

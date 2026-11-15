@@ -37,7 +37,7 @@ select{padding:7px 10px}
 <div class="card" style="margin-bottom:14px">
 <h3>Right now</h3>
 <div class="live">
-<div><div class="mut" style="font-size:13px">Sending to guests</div><div class="v" id="l-out">–</div></div>
+<div><div class="mut" style="font-size:13px">Sending</div><div class="v" id="l-out">–</div></div>
 <div><div class="mut" style="font-size:13px">Receiving (uploads)</div><div class="v" id="l-in">–</div></div>
 <div><div class="mut" style="font-size:13px">Transfers in progress</div><div class="v" id="l-n">–</div></div>
 <div><div class="mut" style="font-size:13px">Uploads in flight</div><div class="v" id="l-up">–</div></div>
@@ -51,10 +51,10 @@ select{padding:7px 10px}
 
 <h2>Over time</h2>
 <div class="mini">
-<div class="card"><h3>People</h3><div class="chart" id="c-visitors" style="height:120px"></div></div>
-<div class="card"><h3>Photos &amp; videos opened</h3><div class="chart" id="c-views" style="height:120px"></div></div>
-<div class="card"><h3>Files downloaded</h3><div class="chart" id="c-files" style="height:120px"></div></div>
-<div class="card"><h3>Files uploaded</h3><div class="chart" id="c-uploads" style="height:120px"></div></div>
+<div class="card"><h3>People</h3><div class="chart" id="c-visitors" style="height:120px"></div><p class="note">Someone active in several bars counts in each.</p></div>
+<div class="card"><h3>Photos &amp; videos looked at</h3><div class="chart" id="c-views" style="height:120px"></div></div>
+<div class="card"><h3>Taken home</h3><div class="chart" id="c-files" style="height:120px"></div></div>
+<div class="card"><h3>Uploaded by guests</h3><div class="chart" id="c-uploads" style="height:120px"></div></div>
 </div>
 
 <h2>Data transfer</h2>
@@ -62,7 +62,7 @@ select{padding:7px 10px}
 <div class="card"><div class="hl" id="xfer"></div>
 <div class="legend2" style="margin-top:12px"><span><span class="sw" style="background:var(--s1)"></span>Sent</span><span><span class="sw" style="background:var(--s2)"></span>Received</span></div>
 <div class="chart" id="c-bytes" style="height:150px"></div>
-<p class="note">Measured at your server. For public events Cloudflare keeps copies of thumbnails and photos, so repeat views come from Cloudflare and don't use your upload.</p></div>
+<p class="note">Everything your server sent and received, for the whole site: guests, you, link previews and bots, thumbnails included. For public events Cloudflare can keep copies of thumbnails and photos, and anything it serves from its copy never reaches your server, so it isn't in this total.</p></div>
 <div class="card"><h3>Server</h3><div class="hl" id="health"></div></div>
 </div>
 
@@ -70,18 +70,28 @@ select{padding:7px 10px}
 <div class="card" style="overflow-x:auto"><table class="t" id="t-events"></table></div>
 
 <div class="cols" style="margin-top:14px">
-<div class="card"><h3>Uploads by person</h3><table class="t" id="t-up"></table></div>
-<div class="card"><h3>Devices</h3><div id="devices"></div><h3 style="margin-top:14px">Countries</h3><div id="countries"></div></div>
+<div class="card"><h3>Uploads by person</h3><p class="note" style="margin:0 0 8px">Guests' upload links, plus anything you uploaded in admin.</p><table class="t" id="t-up"></table></div>
+<div class="card"><h3>Devices</h3><p class="note" style="margin:0 0 8px">People by device. Link previews are the cards chat apps show for the link.</p><div id="devices"></div><h3 style="margin-top:14px">Countries</h3><div id="countries"></div></div>
 </div>
 
 <h2>Most popular</h2>
 <div class="card"><div class="tops" id="tops"></div></div>
 
 <div class="cols" style="margin-top:14px">
-<div class="card"><h3>Recent activity</h3><div class="feed" id="feed"></div></div>
-<div class="card"><h3>Errors</h3><div id="errkinds" class="row" style="margin-bottom:6px"></div><div class="feed" id="errs"></div></div>
+<div class="card"><h3>Recent activity</h3><p class="note" style="margin:0 0 8px">Everything but photo opens, newest first. Your own actions are left out.</p><div class="feed" id="feed"></div></div>
+<div class="card"><h3>Problems</h3><p class="note" style="margin:0 0 8px">Red ones broke something. Grey ones (wrong address, not allowed) are mostly bots and are usually fine.</p><div id="errkinds" class="row" style="margin-bottom:6px"></div><div class="feed" id="errs"></div></div>
 </div>
-<p class="mut" style="font-size:12.5px;margin-top:16px">People are counted by a scrambled version of their internet address, so one household on the same Wi-Fi counts once. Your own visits as admin are left out.</p>
+<details class="card" style="margin-top:16px;font-size:13.5px"><summary style="cursor:pointer"><b>How these are counted</b></summary>
+<ul class="mut" style="padding-left:18px;margin:10px 0 0;line-height:1.55">
+<li><b>People</b>: each phone or computer gets a random id the first time it opens a gallery, so people on the same Wi-Fi count separately. The same person on two devices, or after clearing their browser, counts twice. Visits from before this change were counted by internet address instead.</li>
+<li><b>You are left out</b> of everything except <i>Server data sent</i> and your own uploads. That works on any device where you've opened this admin area at least once, including anything it did before then. Open /admin once on your phone if you check the gallery there.</li>
+<li><b>Link previews</b> (the card WhatsApp or iMessage shows when someone pastes the link) and bots aren't people. They show up only under Devices.</li>
+<li><b>Photos looked at</b>: opening a photo full size. One person flicking back to the same photo counts once. Scrolling past thumbnails isn't counted.</li>
+<li><b>Taken home</b>: files that left the server onto someone's device: <i>Save to Photos</i> (counted once the phone's share sheet is done, even if they picked AirDrop or Messages instead), the <i>Original</i> download button, and ZIPs. A ZIP only counts once it has been sent in full, so a cancelled <i>Download all</i> doesn't count as every photo. Saving the same photo twice counts twice.</li>
+<li><b>Uploaded by guests</b>: files sent through upload links. Your own uploads in admin are listed separately, and files you copy onto the drive directly aren't counted at all.</li>
+<li><b>Problems</b>: server errors are things that broke and are worth a look. <i>Not found</i> is mostly bots trying addresses that don't exist, or old links, and is usually fine.</li>
+<li>Stats are kept for 120 days.</li>
+</ul></details>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -139,20 +149,22 @@ function tipx(t){ const d = new Date(t * 1000), e = new Date((t + data.bucket) *
 
 function render(){
   const t = data.totals, tr = data.traffic, S = data.series, xs = data.labels;
+  const pl = (n, one, many) => `${num(n)} ${n === 1 ? one : many}`;
+  const parts = a => a.filter(Boolean).join(' · ');
   $('tiles').innerHTML = [
-    tile('People', num(t.visitors), `${num(t.page_views)} gallery visits`),
-    tile('Photos viewed', num(t.photo_views), `${num(t.photos_seen)} different photos`),
-    tile('Videos played', num(t.video_plays)),
-    tile('Files downloaded', num(t.files_out), `${num(t.single_dl)} single · ${num(t.zip_files)} in ${num(t.zips)} ZIPs · ${num(t.saves)} saved to phone`),
-    tile('Download size', size(t.bytes_files_out), 'what guests took home'),
-    tile('Uploaded by guests', num(t.uploads), `${size(t.upload_bytes)} from ${num(t.uploaders)} ${t.uploaders === 1 ? 'person' : 'people'}`),
-    tile('Data sent', size(tr.out), `${size(tr.in)} received`),
-    tile('Errors', num(t.errors), t.unlock_fails ? `${num(t.unlock_fails)} wrong passwords` : 'things that failed for guests'),
+    tile('People', num(t.visitors), parts([`opened a gallery`, pl(t.page_views, 'page load', 'page loads')])),
+    tile('Photos looked at', num(t.photo_views), parts([`opened full size, once per person`, t.photos_seen && pl(t.photos_seen, 'different photo', 'different photos')])),
+    tile('Videos played', num(t.video_plays), t.video_plays ? parts([`once per person`, pl(t.videos_seen, 'different video', 'different videos')]) : 'once per person'),
+    tile('Taken home', num(t.files_out), t.files_out ? parts([pl(t.takers, 'person', 'people'), t.saves && `${num(t.saves)} saved to phone`, t.single_dl && `${num(t.single_dl)} downloaded`, t.zip_files && `${num(t.zip_files)} in ${pl(t.zips, 'ZIP', 'ZIPs')}`]) : 'photos & videos saved or downloaded'),
+    tile('Size taken home', size(t.bytes_files_out), 'full-size originals'),
+    tile('Uploaded by guests', num(t.uploads), parts([t.uploads && `${size(t.upload_bytes)} from ${pl(t.uploaders, 'person', 'people')}`, t.my_uploads ? `+ ${num(t.my_uploads)} by you` : '', !t.uploads && !t.my_uploads && 'through upload links']) ),
+    tile('Server data sent', size(tr.out), `whole site, you included · ${size(tr.in)} received`),
+    tile('Problems', num(t.server_errors), parts([t.server_errors ? 'server errors' : 'no server errors', t.unlock_fails && pl(t.unlock_fails, 'wrong password', 'wrong passwords'), t.not_found && `${num(t.not_found)} not found`])),
   ].join('');
   const o = {bars: true, fmt: num, xfmt, tipx};
   chart($('c-visitors'), xs, [{name: 'People', color: 'var(--s1)', data: S.visitors}], o);
-  chart($('c-views'), xs, [{name: 'Opened', color: 'var(--s1)', data: S.photo_views}], o);
-  chart($('c-files'), xs, [{name: 'Files', color: 'var(--s1)', data: S.files_out}], o);
+  chart($('c-views'), xs, [{name: 'Looked at', color: 'var(--s1)', data: S.photo_views}], o);
+  chart($('c-files'), xs, [{name: 'Taken home', color: 'var(--s1)', data: S.files_out}], o);
   chart($('c-uploads'), xs, [{name: 'Files', color: 'var(--s1)', data: S.uploads}], o);
   chart($('c-bytes'), xs, [{name: 'Sent', color: 'var(--s1)', data: S.bytes_out}, {name: 'Received', color: 'var(--s2)', data: S.bytes_in}], {fmt: size, xfmt, tipx});
   const avg = tr.out / Math.max(1, ({'24h': 86400, '7d': 604800, '30d': 2592000, '90d': 7776000})[data.range]);
@@ -160,7 +172,7 @@ function render(){
     <div><div class="mut">Requests</div>${num(tr.req)}</div><div><div class="mut">Average send rate</div>${rate(avg)}</div>` + (evSel ? `<div class="mut" style="grid-column:1/-1">Transfer totals are for the whole site, not just this event.</div>` : '');
 
   const E = data.events;
-  $('t-events').innerHTML = E.length ? `<tr><th>Event</th><th class="n">People</th><th class="n">Visits</th><th class="n">Opened</th><th class="n">Downloaded</th><th class="n">Size</th><th class="n">Uploaded</th><th class="n">Last activity</th></tr>` +
+  $('t-events').innerHTML = E.length ? `<tr><th>Event</th><th class="n" title="People who opened the gallery">People</th><th class="n" title="Page loads, reloads included">Page loads</th><th class="n" title="Photos and videos opened full size, once per person">Looked at</th><th class="n" title="Files saved to phones, downloaded or in finished ZIPs">Taken home</th><th class="n">Size</th><th class="n" title="Files from guests' upload links">Guest uploads</th><th class="n">Last activity</th></tr>` +
     E.map(e => `<tr><td><a href="/admin/events/${encodeURIComponent(e.event)}">${esc(e.name)}</a></td><td class="n">${num(e.visitors)}</td><td class="n">${num(e.page_views)}</td><td class="n">${num(e.views)}</td><td class="n">${num(e.files_out)}</td><td class="n">${size(e.bytes_out)}</td><td class="n">${num(e.uploads)}${e.uploads ? ' · ' + size(e.upload_bytes) : ''}</td><td class="n mut">${ago(e.last)}</td></tr>`).join('')
     : '<tr><td class="mut">Nothing yet in this period.</td></tr>';
   const U = data.uploaders;
@@ -171,13 +183,14 @@ function render(){
   $('devices').innerHTML = hb(data.devices, k => ({phone: 'Phone', computer: 'Computer', tablet: 'Tablet', bot: 'Link preview', unknown: 'Unknown'})[k] || esc(k));
   $('countries').innerHTML = hb(data.countries, k => (FLAG(k) + ' ' + esc(k || '?')));
   $('tops').innerHTML = data.top.length ? data.top.map(p => `<a href="/admin/events/${encodeURIComponent(p.slug)}" title="${esc(p.item)}"><div class="im" style="background-image:url('/admin/events/${encodeURIComponent(p.slug)}/thumb/${encodeURIComponent(p.item)}')"></div>
-    <div class="mut">${num(p.views)} views${p.downloads ? ` · ${num(p.downloads)} saved` : ''}</div></a>`).join('') : '<p class="mut">Nothing opened yet in this period.</p>';
+    <div class="mut">${pl(p.views, 'person', 'people')}${p.downloads ? ` · ${num(p.downloads)} taken` : ''}</div></a>`).join('') : '<p class="mut">Nothing opened yet in this period.</p>';
   const what = r => { const it = esc((r.item || '').split('/').pop());
     switch (r.kind) {
       case 'page_view': return `opened <b>${esc(r.ev_name)}</b>`;
       case 'video_play': return `played ${it}`;
       case 'download': return `downloaded ${it} <span class="mut">${size(r.bytes)}</span>`;
       case 'zip': return `downloaded a ZIP of ${num(r.n)} ${r.detail === 'all' ? '(everything)' : 'selected'} <span class="mut">${size(r.bytes)}</span>`;
+      case 'zip_cancel': return `<span class="mut">started a ZIP of ${num(r.n)} but it didn't finish</span>`;
       case 'save': return `saved ${num(r.n)} to their phone <span class="mut">${size(r.bytes)}</span>`;
       case 'upload': return `uploaded ${it} <span class="mut">${size(r.bytes)}</span>`;
       case 'uploader_open': return `opened their upload link`;
@@ -185,10 +198,10 @@ function render(){
       case 'error': return `<span class="bad2">${esc(r.detail)}</span> ${esc(r.item)}`;
       default: return esc(r.kind);
     } };
-  const person = r => r.who === 'admin' ? 'You' : r.who_name ? esc(r.who_name) : (FLAG(r.country) + ' ' + guest(r.visitor));
+  const person = r => r.who === 'admin' ? 'You' : r.who_name ? esc(r.who_name) : r.device === 'bot' ? 'Link preview' : (FLAG(r.country) + ' ' + guest(r.visitor));
   $('feed').innerHTML = data.recent.length ? data.recent.map(r => `<div><span class="tm">${ago(r.ts)}</span><span><b>${person(r)}</b> ${what(r)}${r.kind !== 'page_view' && !evSel && r.ev_name && r.kind !== 'error' ? ` <span class="pill">${esc(r.ev_name)}</span>` : ''}</span></div>`).join('') : '<p class="mut">Nothing yet.</p>';
-  $('errkinds').innerHTML = data.error_kinds.map(k => `<span class="pill">${esc(k.detail)} × ${num(k.c)}</span>`).join('');
-  $('errs').innerHTML = data.errors.length ? data.errors.map(r => `<div><span class="tm">${ago(r.ts)}</span><span><span class="bad2">${esc(r.detail)}</span> ${esc(r.item)} <span class="mut">${FLAG(r.country)} ${guest(r.visitor)} · ${esc(r.device)}</span></span></div>`).join('') : '<p class="mut">No errors in this period.</p>';
+  $('errkinds').innerHTML = data.error_kinds.map(k => `<span class="pill${k.server ? ' bad2' : ''}">${esc(k.detail)} × ${num(k.c)}</span>`).join('');
+  $('errs').innerHTML = data.errors.length ? data.errors.map(r => `<div><span class="tm">${ago(r.ts)}</span><span><span class="${r.server ? 'bad2' : 'mut'}">${esc(r.detail)}</span> ${esc(r.item)} <span class="mut">${FLAG(r.country)} ${guest(r.visitor)} · ${esc(r.device)}</span></span></div>`).join('') : '<p class="mut">No errors in this period.</p>';
 }
 
 async function load(){

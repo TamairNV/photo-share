@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% from "_icons.html" import i %}{% block title %}{{ ev.name }} · Admin{% endblock %}{% block body %}
 <header><div data-live="head"><a href="/admin" class="row" style="gap:4px;display:inline-flex">{{ i('back', 16) }} All events</a><h1>{{ ev.name }}</h1>
-<span class="mut row" style="gap:14px">{{ items|length }} items · {{ total|size }}<span>{{ i('eye', 15) }} {{ ev.views }} views</span><span>{{ i('download', 15) }} {{ ev.downloads }} downloads</span></span></div>
+<span class="mut row" style="gap:14px">{{ items|length }} items · {{ total|size }}<span title="People who opened the gallery (not you)">{{ i('eye', 15) }} {{ counts.people or 0 }} {{ "person" if counts.people == 1 else "people" }}</span><span title="Photos and videos guests saved or downloaded">{{ i('download', 15) }} {{ counts.files or 0 }} taken home</span><a href="/admin/stats?event={{ slug|q }}">{{ i('chart', 15) }} Stats</a></span></div>
 <a class="btn sec" href="/e/{{ ev.token }}" target="_blank">{{ i('external', 18) }} View as guest</a></header>
 
 <div data-live="notice">{% if missing_thumbs %}<p class="mut">{{ missing_thumbs }} thumbnails not built yet. They build on first view, or hit Rescan below.</p>{% endif %}</div>

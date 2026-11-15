@@ -8,7 +8,7 @@ Two tables:
   hits     one row per human-meaningful action (page view, photo opened, file downloaded, upload ...)
   traffic  per-minute totals of requests, bytes out/in and errors, measured by the ASGI middleware
 """
-import hashlib, os, queue, sqlite3, threading, time
+import hashlib, os, queue, re, secrets, sqlite3, threading, time
 from collections import deque
 
 _q: "queue.Queue[tuple]" = queue.Queue()
@@ -61,9 +61,40 @@ def visitor_id(ip):
     return hashlib.blake2b(ip.encode(), key=_salt[:32], digest_size=6).hexdigest()
 
 
+# A guest's browser gets a random id in this cookie the first time it opens a gallery. It is a far better
+# "one person" than the internet address: everyone on the party Wi-Fi (or one phone network) shares an
+# address, and phones hop between addresses as they move between Wi-Fi and mobile data.
+COOKIE = "gv"
+_cookie_ok = re.compile(r"^[0-9a-f]{12}$")
+
+
+def new_cookie_id():
+    return secrets.token_hex(6)
+
+
+def cookie_visitor(raw):
+    """Stored visitor ids: 'c' + cookie id for browsers we've tagged, bare IP hash otherwise (bots, old rows)."""
+    return "c" + raw[:11] if raw and _cookie_ok.match(raw) else ""
+
+
+def request_visitor(request):
+    raw = getattr(request.state, "gv", None) or request.cookies.get(COOKIE)
+    v = cookie_visitor(raw)
+    if v:
+        return v
+    ip = request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
+    return visitor_id(ip)
+
+
+# link previews (WhatsApp, iMessage, Telegram, Discord ...), search engines, scanners and scripts
+BOT_WORDS = ("bot", "crawl", "spider", "slurp", "whatsapp", "facebookexternalhit", "preview", "embedly", "skype",
+             "curl", "wget", "python-", "python/", "go-http", "okhttp", "java/", "node-fetch", "axios", "aiohttp",
+             "httpx", "scrapy", "headless", "lighthouse", "pingdom", "uptime", "monitor", "zgrab", "masscan", "nmap")
+
+
 def device_of(ua):
     ua = (ua or "").lower()
-    if any(w in ua for w in ("bot", "crawl", "spider", "whatsapp", "facebookexternalhit", "preview", "curl", "python-")):
+    if any(w in ua for w in BOT_WORDS):
         return "bot"
     if "ipad" in ua or "tablet" in ua:
         return "tablet"
@@ -75,8 +106,7 @@ def device_of(ua):
 def log(kind, request=None, event="", item="", n=1, nbytes=0, who="", detail=""):
     vis = country = dev = ""
     if request is not None:
-        ip = request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
-        vis = visitor_id(ip)
+        vis = request_visitor(request)
         country = (request.headers.get("cf-ipcountry") or "")[:2]
         dev = device_of(request.headers.get("user-agent"))
     _q.put(("hit", (time.time(), event or "", kind, vis, (item or "")[:300], int(n), int(nbytes), who or "",
@@ -155,12 +185,14 @@ class StatsMiddleware:
         global _next_id
         hdrs = {k: v for k, v in scope.get("headers", [])}
         ip = (hdrs.get(b"cf-connecting-ip") or b"").decode() or (scope.get("client") or ("?",))[0]
+        m = re.search(r"(?:^|;\s*)" + COOKIE + r"=([0-9a-f]{12})", (hdrs.get(b"cookie") or b"").decode("latin-1"))
+        vis = cookie_visitor(m.group(1) if m else "") or visitor_id(ip)
         kind = _classify(scope["path"], scope["method"])
         with _live_lock:
             _next_id += 1
             rid = _next_id
             _active[rid] = {"kind": kind, "path": scope["path"], "start": time.time(), "out": 0, "in": 0,
-                            "total": 0, "visitor": visitor_id(ip), "status": 0}
+                            "total": 0, "visitor": vis, "status": 0}
         status = 0
 
         async def rcv():
@@ -215,7 +247,7 @@ class StatsMiddleware:
                 elif status == 0:
                     rec["err"] += 1  # client hung up / crashed before a response
             if status >= 400 and kind != "admin" and not (status == 404 and scope["path"] in ("/favicon.ico", "/robots.txt")):
-                _q.put(("hit", (time.time(), "", "error", visitor_id(ip), scope["path"][:300], 1, 0, "",
+                _q.put(("hit", (time.time(), "", "error", vis, scope["path"][:300], 1, 0, "",
                                 (hdrs.get(b"cf-ipcountry") or b"").decode()[:2], device_of((hdrs.get(b"user-agent") or b"").decode()),
                                 f"{scope['method']} {status}")))
 
