@@ -71,9 +71,9 @@ Uses Claude Code ({{ tagging.model }}) on your subscription.</p>{% endif %}
 <button class="bad" type="button" id="delbtn" style="display:none" onclick="bulkDelete()">Delete selected</button></span></h2>
 <div data-live="legend">{% include "_legend.html" %}</div>
 <div class="grid" id="grid" data-live="grid">{% for it in items %}
-<div class="it {% if it.video %}vid{% endif %}" data-name="{{ it.name }}" data-by="{{ it.by }}" title="{{ it.name }} · {{ it.size|size }}">
+<div class="it {% if it.video %}vid{% endif %}" data-name="{{ it.name }}" data-by="{{ it.by }}" data-v="{{ it.mtime|int }}" data-size="{{ it.size|size }}" title="{{ it.name }} · {{ it.size|size }}">
 {% if it.by and colours.get(it.by) %}<span class="byb" style="--c:{{ colours[it.by] }}"></span>{% endif %}
-{% if it.video %}<video src="/e/{{ ev.token }}/file/{{ it.name|q }}?v={{ it.mtime|int }}#t=0.1" preload="metadata" muted></video>
+{% if it.video %}<video src="/admin/events/{{ slug }}/file/{{ it.name|q }}?v={{ it.mtime|int }}#t=0.1" preload="metadata" muted playsinline></video>
 {% else %}<img loading="lazy" decoding="async" src="/admin/events/{{ slug }}/thumb/{{ it.name|q }}?v={{ it.mtime|int }}" alt="">{% endif %}
 <span class="chk"></span>
 {% if not it.video %}<form method="post" action="/admin/events/{{ slug }}/cover" style="position:absolute;bottom:6px;right:6px" class="tilebtn">
@@ -83,6 +83,9 @@ Uses Claude Code ({{ tagging.model }}) on your subscription.</p>{% endif %}
 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="names" value="{{ it.name }}">
 <button class="sec iconbtn del" title="Delete" aria-label="Delete">{{ i('trash', 18) }}</button></form>
 </div>{% endfor %}</div>
+<div id="lb"><div class="top"><span id="cap" class="mut"></span>
+<span class="row"><a id="dl" class="btn sec">{{ i('download', 18) }} <span>Download original</span></a><button class="sec iconbtn close" type="button" onclick="closeLb()" aria-label="Close">{{ i('x', 22) }}</button></span></div>
+<button class="nav" id="prev" type="button" onclick="step(-1)" aria-label="Previous">{{ i('left', 34) }}</button><div id="media"></div><button class="nav" id="next" type="button" onclick="step(1)" aria-label="Next">{{ i('right', 34) }}</button></div>
 <form method="post" action="/admin/events/{{ slug }}/delete-photos" id="delform"><input type="hidden" name="csrf" value="{{ csrf }}"></form>
 
 <h2>Settings</h2>
@@ -125,7 +128,30 @@ function applySelecting(){ G().classList.toggle('selecting', selecting);
   document.querySelectorAll('.tilebtn').forEach(f => f.style.display = selecting ? 'none' : ''); }
 function upd(){ const n = G().querySelectorAll('.sel').length; const b = document.getElementById('delbtn');
   b.style.display = n ? '' : 'none'; b.innerHTML = `${TRASH} Delete ${n} selected`; }
-document.addEventListener('click', e => { const it = e.target.closest('#grid .it'); if (!it || !selecting) return; e.preventDefault(); it.classList.toggle('sel'); upd(); });
+document.addEventListener('click', e => { const it = e.target.closest('#grid .it'); if (!it) return;
+  if (selecting) { e.preventDefault(); it.classList.toggle('sel'); upd(); return; }
+  if (e.target.closest('.tilebtn')) return; openLb(it); });
+
+// ---------- full-size viewer: click a photo to open it, videos play here ----------
+const SLUG = {{ slug|tojson }}, lb = document.getElementById('lb'), media = document.getElementById('media');
+let tiles = [], cur = 0;
+const url = (t, kind) => `/admin/events/${SLUG}/${kind}/${encodeURIComponent(t.dataset.name)}?v=${t.dataset.v}`;
+function show(){
+  const t = tiles[cur], vid = t.classList.contains('vid');
+  media.innerHTML = vid ? `<video src="${url(t, 'file')}" controls autoplay playsinline></video>` : `<img src="${url(t, 'preview')}" alt="">`;
+  document.getElementById('dl').href = `/admin/events/${SLUG}/file/${encodeURIComponent(t.dataset.name)}?dl=1`;
+  document.getElementById('cap').textContent = `${t.dataset.name}  ·  ${t.dataset.size}  ·  ${cur + 1} / ${tiles.length}`;
+  for (const d of [1, -1]) { const nb = tiles[(cur + d + tiles.length) % tiles.length]; if (nb && !nb.classList.contains('vid')) new Image().src = url(nb, 'preview'); }
+}
+function openLb(t){ tiles = [...G().querySelectorAll('.it')].filter(x => x.offsetParent !== null); cur = Math.max(0, tiles.indexOf(t));
+  if (!tiles.length) return; show(); lb.classList.add('on'); document.body.style.overflow = 'hidden'; }
+function closeLb(){ lb.classList.remove('on'); media.innerHTML = ''; document.body.style.overflow = ''; }
+function step(d){ if (tiles.length) { cur = (cur + d + tiles.length) % tiles.length; show(); } }
+document.addEventListener('keydown', e => { if (!lb.classList.contains('on')) return;
+  if (e.key === 'Escape') closeLb(); if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1); });
+lb.addEventListener('click', e => { if (e.target === lb || e.target === media) closeLb(); });
+let sx = null; lb.ontouchstart = e => sx = e.touches[0].clientX;
+lb.ontouchend = e => { if (sx === null) return; const dx = e.changedTouches[0].clientX - sx; if (Math.abs(dx) > 50) step(dx < 0 ? 1 : -1); sx = null; };
 function bulkDelete(){ const sel = [...G().querySelectorAll('.sel')]; if (!sel.length || !confirm(`Delete ${sel.length} items forever?`)) return;
   const f = document.getElementById('delform'); f.querySelectorAll('input[name=names]').forEach(x => x.remove());
   sel.forEach(it => { const i = document.createElement('input'); i.type = 'hidden'; i.name = 'names'; i.value = it.dataset.name; f.appendChild(i); });
@@ -178,6 +204,13 @@ document.addEventListener('submit', e => {
 .it .tilebtn .iconbtn{background:rgba(20,20,22,.75)!important;color:#fff;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
 .it .tilebtn{opacity:0;transition:opacity .15s}.it:hover .tilebtn,.it .tilebtn:has(.star.on){opacity:1}
 @media (pointer:coarse){.it .tilebtn{opacity:1}}
+#lb{position:fixed;inset:0;background:#000;display:none;align-items:center;justify-content:center;z-index:30}
+#lb.on{display:flex}#lb img,#lb video{max-width:96vw;max-height:84vh;object-fit:contain}
+#lb .top{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:12px;gap:8px;background:linear-gradient(rgba(0,0,0,.6),transparent)}
+#lb #cap{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+#lb .nav{position:fixed;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.35);border-radius:50%;padding:10px;width:56px;height:56px}
+#prev{left:4px}#next{right:4px}
+@media (max-width:600px){ #lb .nav{display:none} #lb #dl span{display:none} }
 .it .star.on{color:#fcc419}.it .star.on svg{fill:currentColor}.it .del:hover{color:var(--bad)}
 </style>
 {% endblock %}
