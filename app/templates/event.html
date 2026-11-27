@@ -69,6 +69,16 @@
 @keyframes dn{from{transform:translateY(-100%)}}
 .lbopen.selecting-page #selhead{display:none}
 @media (pointer:coarse){ #toasts{bottom:calc(92px + env(safe-area-inset-bottom))} }
+/* ---- "this is a big download" sheet ---- */
+#ask,#askshade{display:none}#askshade.on{display:block;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:29}
+#ask.on{display:block;position:fixed;z-index:30;left:50%;top:50%;transform:translate(-50%,-50%);width:min(440px,calc(100vw - 32px));
+  max-height:calc(100vh - 32px);overflow:auto;background:#1c1c1f;border-radius:18px;padding:20px 18px;box-shadow:0 10px 40px rgba(0,0,0,.6)}
+#ask h3{margin:0 0 8px;font-size:20px}#ask p{margin:0 0 10px;line-height:1.45;font-size:15px}#ask .size{font-size:30px;font-weight:700;margin:2px 0 10px}
+#ask .warn{background:#3a2a12;border-left:4px solid #e5a823;border-radius:8px;padding:8px 10px;font-size:14px}
+#ask .btns{display:flex;flex-direction:column;gap:8px;margin-top:14px}#ask .btns button{width:100%;min-height:50px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:16px;border-radius:12px;padding:8px 12px}
+#ask .btns .small{font-size:13px;opacity:.75;font-weight:400;display:block;margin-top:2px}
+@media (pointer:coarse){ #ask.on{top:auto;bottom:0;left:0;right:0;transform:none;width:auto;max-height:90vh;border-radius:20px 20px 0 0;
+  padding-bottom:calc(20px + env(safe-area-inset-bottom));animation:up .2s ease-out} }
 </style>{% endblock %}
 {% block body %}
 <div class="hero" {% if cover %}style="background-image:url('/e/{{ token }}/preview/{{ cover.name|q }}?v={{ cover.v }}')"{% endif %}><div class="in">
@@ -83,7 +93,7 @@
 {% include "_legend.html" %}
 {% include "_tags.html" %}
 {% if items %}<div class="tools row" style="justify-content:space-between">
-<span class="row"><a class="btn" href="/e/{{ token }}/download.zip" id="allbtn">{{ i('download', 18) }} Download all (ZIP)</a>
+<span class="row"><a class="btn" href="/e/{{ token }}/download.zip" id="allbtn" onclick="return dlAll(event)">{{ i('download', 18) }} Download all (ZIP · {{ items|sum(attribute='size')|size }})</a>
 <button class="sec" type="button" id="selbtn" onclick="toggleSelect()">{{ i('select', 18) }} <span>Select</span></button>
 <button class="sec" type="button" id="selall" style="display:none" onclick="selAll()">Select all</button>
 <button type="button" id="dlsel" style="display:none" onclick="dlSelected()">Download selected</button>
@@ -111,8 +121,8 @@
   <span id="mb-normal" style="display:contents">
     <button class="big sec" type="button" onclick="toggleSelect()">{{ i('select', 22) }} Select</button>
     <button class="big save-only" type="button" onclick="saveAll()">{{ i('photos', 22) }} <span>Save all<span class="opt">&nbsp;to Photos</span></span></button>
-    <a class="btn big dl-only" href="/e/{{ token }}/download.zip">{{ i('download', 22) }} Download all</a>
-    <a class="btn tb save-only" href="/e/{{ token }}/download.zip">{{ i('download', 24) }}ZIP file</a>
+    <a class="btn big dl-only" href="/e/{{ token }}/download.zip" onclick="return dlAll(event)">{{ i('download', 22) }} <span>Download all<span class="opt">&nbsp;· {{ items|sum(attribute='size')|size }}</span></span></a>
+    <a class="btn tb save-only" href="/e/{{ token }}/download.zip" onclick="return dlAll(event)">{{ i('download', 24) }}ZIP file</a>
   </span>
   <span id="mb-select" style="display:none">
     <button class="big save-only" type="button" id="mb-save" onclick="saveSelectedM()" disabled>Tap to pick</button>
@@ -133,13 +143,16 @@
 
 
 
+<div id="askshade" onclick="askClose()"></div>
+<div id="ask" role="dialog" aria-modal="true" aria-labelledby="ask-title"><h3 id="ask-title"></h3><div id="ask-body"></div><div class="btns" id="ask-btns"></div></div>
+
 <div id="lb"><div class="top"><span id="cap" class="mut"></span>
-<span class="row"><button class="sec pick" type="button" onclick="lbPick()">{{ i('select', 18) }} <span class="pl">Select</span></button><a id="dl" class="btn">{{ i('download', 18) }} Download original</a><button class="sec iconbtn close" onclick="closeLb()" aria-label="Close">{{ i('x', 22) }}</button></span></div>
+<span class="row"><button class="sec pick" type="button" onclick="lbPick()">{{ i('select', 18) }} <span class="pl">Select</span></button><a id="dl" class="btn" onclick="return lbDownload(event)">{{ i('download', 18) }} Download original</a><button class="sec iconbtn close" onclick="closeLb()" aria-label="Close">{{ i('x', 22) }}</button></span></div>
 <div id="lbbar">
 <button class="tb pick" type="button" onclick="lbPick()">{{ i('select', 24) }}<span class="pl">Select</span></button>
 <button class="big save-only" type="button" onclick="saveCurrent()">{{ i('photos', 22) }} Save to Photos</button>
-<a class="btn big dl-only" id="dl2">{{ i('download', 22) }} Download original</a>
-<a class="btn tb save-only" id="dl3">{{ i('download', 24) }}Original</a></div>
+<a class="btn big dl-only" id="dl2" onclick="return lbDownload(event)">{{ i('download', 22) }} Download original</a>
+<a class="btn tb save-only" id="dl3" onclick="return lbDownload(event)">{{ i('download', 24) }}Original</a></div>
 <button class="nav" id="prev" onclick="step(-1)" aria-label="Previous">{{ i('left', 34) }}</button><div id="media"></div><button class="nav" id="next" onclick="step(1)" aria-label="Next">{{ i('right', 34) }}</button></div>
 <script>
 if (sessionStorage.keepY) { const y = +sessionStorage.keepY; delete sessionStorage.keepY; addEventListener('load', () => scrollTo(0, y)); }
@@ -159,8 +172,9 @@ function show(){
   const it = items[cur], n = enc(it.name);
   m.innerHTML = it.video ? `<video src="/e/${tok}/file/${n}?v=${it.v}" controls autoplay playsinline></video>` : `<img src="/e/${tok}/preview/${n}?v=${it.v}">`;
   if (it.video) m.querySelector('video').addEventListener('play', () => seenQ.p.add(it.name), {once: true}); else seenQ.v.add(it.name);
-  document.getElementById('dl').href = `/e/${tok}/file/${n}?dl=1`;
-  for (const id of ['dl2', 'dl3']) { const a = document.getElementById(id); if (a) a.href = `/e/${tok}/file/${n}?dl=1`; }
+  for (const id of ['dl', 'dl2', 'dl3']) { const a = document.getElementById(id); if (a) a.href = `/e/${tok}/file/${n}?dl=1`; }
+  document.getElementById('dl').innerHTML = `${IC.download} Download original (${fmt(it.size)})`;
+  const d2 = document.getElementById('dl2'); if (d2) d2.innerHTML = `${IC.download} Download (${fmt(it.size)})`;
   document.getElementById('cap').textContent = `${it.when}` + (it.by && who[it.by] ? `  ·  by ${who[it.by]}` : '') + `  ·  ${cur+1} / ${items.length}`;
   drawPick();
   for (const d of [1, -1]) { const nb = items[(cur + d + items.length) % items.length]; if (!nb.video) new Image().src = `/e/${tok}/preview/${enc(nb.name)}?v=${nb.v}`; }
@@ -173,6 +187,73 @@ document.onkeydown = e => { if (!lb.classList.contains('on')) return;
   if (e.key === 'Escape') closeLb(); if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1); };
 let sx = null; lb.ontouchstart = e => sx = e.touches[0].clientX;
 lb.ontouchend = e => { if (sx === null) return; const dx = e.changedTouches[0].clientX - sx; if (Math.abs(dx) > 50) step(dx < 0 ? 1 : -1); sx = null; };
+// ---------- big downloads: say how big, ask first, and stop repeat taps ----------
+// People tap Download expecting a photo; a video or "Download all" can be gigabytes, and when a big file
+// seems to do nothing they tap again (each tap starts it over). So: sizes on every button, a plain-words
+// check before anything over BIG, cheaper options (photos only / pick some), and "already downloading".
+const BIG = 150 * 1048576;
+const fmt = b => b < 1048576 ? Math.max(1, Math.round(b / 1024)) + ' KB' : b < 1073741824 ? Math.round(b / 1048576) + ' MB' : (b / 1073741824).toFixed(1) + ' GB';
+const sizeOf = list => list.reduce((a, x) => a + (x.size || 0), 0);
+const zipKey = list => 'zip:' + list.length + ':' + sizeOf(list);
+const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const ANDROID = /Android/.test(navigator.userAgent);
+const onCell = () => { const c = navigator.connection; return !!c && (c.type === 'cellular' || c.saveData); };
+function mins(bytes){ const m = Math.ceil(bytes * 8 / 25e6 / 60); return m <= 1 ? 'about a minute' : m < 90 ? `about ${m} minutes` : `over ${Math.floor(m / 60)} hours`; }
+const WHERE = IOS ? 'To find it: in Safari tap the <b>download arrow</b> (or <b>aA</b>) in the address bar, then <b>Downloads</b>. Files also land in the <b>Files</b> app.'
+  : ANDROID ? 'To find it: swipe down from the top of the screen, or open your <b>Files</b> / <b>Downloads</b> app.'
+  : "To find it: look in your browser's <b>downloads</b> (the arrow at the top right, or the bar at the bottom).";
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const el = id => document.getElementById(id);
+function ask(title, html, btns){
+  el('ask-title').textContent = title; el('ask-body').innerHTML = html; const box = el('ask-btns'); box.innerHTML = '';
+  for (const b of [...btns, {label: btns.length ? 'Cancel' : 'OK, got it', fn: () => {}, primary: !btns.length}]) {
+    const x = document.createElement('button'); x.type = 'button'; if (!b.primary) x.className = 'sec';
+    x.innerHTML = esc(b.label) + (b.sub ? `<span class="small">${esc(b.sub)}</span>` : '');
+    x.onclick = () => { askClose(); b.fn(); }; box.appendChild(x); }
+  el('ask').classList.add('on'); el('askshade').classList.add('on'); }
+function askClose(){ el('ask').classList.remove('on'); el('askshade').classList.remove('on'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && el('ask').classList.contains('on')) { e.stopImmediatePropagation(); askClose(); } }, true);
+function askBig(list, what, btns){
+  const b = sizeOf(list);
+  ask('This is a big download', `<p>${esc(what)} ${list.length > 1 ? 'add up to' : 'is'}</p><div class="size">${fmt(b)}</div>
+    <p>That takes ${mins(b)} on good Wi-Fi and uses a lot of space on your ${matchMedia('(pointer:coarse)').matches ? 'phone' : 'computer'}.</p>` +
+    (onCell() ? `<p class="warn">You look to be on <b>mobile data</b>. This could use ${fmt(b)} of your allowance, so Wi-Fi is a good idea.</p>`
+              : `<p class="mut">On mobile data? Best to wait for Wi-Fi.</p>`), btns); }
+// what this tab already started, so a second tap asks instead of starting it all over
+const STARTED = 'started:' + tok; let started_ = null; const startedMap = () => started_ || (started_ = load(sessionStorage, STARTED) || {});
+function guard(key, list, what, start, zip, sizeChecked){
+  const started = startedMap(), run = () => { started[key] = Date.now(); store(sessionStorage, STARTED, started); start(); afterStart(list, zip); };
+  const ago = Date.now() - (started[key] || 0);
+  if (ago < 10 * 60e3) {
+    const s = Math.round(ago / 1000);
+    return ask('Already downloading', `<p>You started this ${s < 60 ? s + ' seconds' : Math.round(s / 60) + ' min'} ago (${fmt(sizeOf(list))}).
+      It carries on in the background even if nothing seems to happen. Tapping again starts it all over.</p><p>${WHERE}</p>`,
+      [{label: 'Download it again anyway', fn: run}]); }
+  if (!sizeChecked && sizeOf(list) > BIG) return askBig(list, what, [{label: `Download ${fmt(sizeOf(list))}`, fn: run, primary: true}]);
+  run(); }
+function afterStart(list, zip){
+  const b = sizeOf(list);
+  if (b < 20 * 1048576) return toastMsg(zip ? `Downloading ${list.length} as a ZIP file` : 'Downloading…', false);
+  ask('Download started', `<p><b>${fmt(b)}</b> is on its way${zip ? ' as a ZIP file (it can take a few seconds to start)' : ''}.
+    It takes ${mins(b)}, so give it time and <b>don't tap download again</b>.</p><p>${WHERE}</p>` +
+    (zip && CAN_SAVE ? '<p class="mut">Want them in your Photos instead? Use <b>Save to Photos</b>.</p>' : ''), []); }
+function go(url){ const a = document.createElement('a'); a.href = url; document.body.appendChild(a); a.click(); a.remove(); }
+function dlAll(e){ if (e) e.preventDefault();
+  const vids = items.filter(x => x.video), pics = items.filter(x => !x.video), total = sizeOf(items);
+  const all = checked => guard('zip:all', items, `All ${items.length} files`, () => { go(`/e/${tok}/download.zip`); markSaved(items.map(x => x.name)); }, true, checked);
+  if (total <= BIG) { all(false); return false; }
+  const btns = [];
+  if (CAN_SAVE) btns.push({label: 'Save to Photos instead', sub: 'Puts them straight in your Photos, 20 at a time', fn: saveAll, primary: true});
+  if (vids.length && pics.length) btns.push({label: `Photos only: ${pics.length} (${fmt(sizeOf(pics))})`, sub: `Leaves out the ${vids.length} video${vids.length > 1 ? 's' : ''}`,
+    primary: !CAN_SAVE, fn: () => guard(zipKey(pics), pics, 'The photos', () => postZip(pics), true, true)});
+  btns.push({label: 'Let me pick which ones', sub: 'Then tap the photos you want', fn: () => { if (!selecting) toggleSelect(); }});
+  btns.push({label: `Everything: ${items.length} files (${fmt(total)})`, primary: !btns.some(b => b.primary), fn: () => all(true)});
+  askBig(items, `All ${items.length} files`, btns);
+  return false; }
+function lbDownload(e){ e.preventDefault(); const it = items[cur];
+  guard('file:' + it.name, [it], it.video ? 'This video' : 'This file', () => { go(`/e/${tok}/file/${enc(it.name)}?dl=1`); markSaved([it.name]); }, false);
+  return false; }
+
 // ---------- picking photos ----------
 // Tap Select (or press and hold any photo) to start picking. Hold and slide across photos to pick a run of them.
 const SELKEY = 'sel:' + tok, SAVEDKEY = 'saved:' + tok;
@@ -242,21 +323,22 @@ function fitBar(){ document.querySelectorAll('#mbar .big').forEach(b => { b.quer
   if (b.scrollWidth > b.clientWidth + 1) b.querySelectorAll('.opt').forEach(o => o.style.display = 'none'); }); }
 addEventListener('resize', fitBar);
 function selAll(){ const t = tiles(), all = t.every(x => x.classList.contains('sel')); t.forEach(x => x.classList.toggle('sel', !all)); upd(); }
-function upd(){ const sel = selTiles(), n = sel.length, all = n && n === tiles().length, b = document.getElementById('dlsel');
+function upd(){ const sel = selTiles(), n = sel.length, sz = fmt(sizeOf(sel.map(t => items[+t.dataset.i]))), all = n && n === tiles().length, b = document.getElementById('dlsel');
   const ms = document.getElementById('mb-save'), md = document.getElementById('mb-dl');
   if (ms) { ms.disabled = !n; ms.innerHTML = n ? `${IC.photos} <span>Save ${n}<span class="opt">&nbsp;to Photos</span></span>` : 'Tap photos to pick'; fitBar(); }
-  if (md) { md.disabled = !n; md.innerHTML = n ? `${IC.download} Download ${n}` : 'Tap photos to pick'; }
-  const sh = document.getElementById('sh-count'); if (sh) sh.textContent = n ? `${n} selected` : 'Tap photos to pick';
+  if (md) { md.disabled = !n; md.innerHTML = n ? `${IC.download} Download ${n} · ${sz}` : 'Tap photos to pick'; }
+  const sh = document.getElementById('sh-count'); if (sh) sh.textContent = n ? `${n} selected · ${sz}` : 'Tap photos to pick';
   const sa = document.getElementById('sh-all'); if (sa) sa.textContent = all ? 'Deselect all' : 'Select all';
   const s2 = document.getElementById('selall'); s2.style.display = selecting ? '' : 'none'; s2.textContent = all ? 'Deselect all' : 'Select all';
-  b.style.display = n ? '' : 'none'; b.innerHTML = `${IC.download} Download ${n} selected (ZIP)`;
-  document.getElementById('selinfo').textContent = selecting ? (n ? `${n} selected` : 'Click photos to pick them (shift-click picks a run)') : '';
+  b.style.display = n ? '' : 'none'; b.innerHTML = `${IC.download} Download ${n} selected (ZIP · ${sz})`;
+  document.getElementById('selinfo').textContent = selecting ? (n ? `${n} selected · ${sz}` : 'Click photos to pick them (shift-click picks a run)') : '';
   store(sessionStorage, SELKEY, selecting ? sel.map(t => items[+t.dataset.i].name) : undefined);
   if (lb.classList.contains('on')) drawPick(); }
-function dlSelected(){ const f = document.getElementById('selform'); f.innerHTML = '';
-  const list = selTiles().map(t => items[+t.dataset.i]); if (!list.length) return;
+function dlSelected(){ const list = selTiles().map(t => items[+t.dataset.i]); if (!list.length) return;
+  guard(zipKey(list), list, list.length === 1 ? 'This file' : `These ${list.length} files`, () => postZip(list), true); }
+function postZip(list){ const f = document.getElementById('selform'); f.innerHTML = '';
   list.forEach(it => { const i = document.createElement('input'); i.type = 'hidden'; i.name = 'names'; i.value = it.name; f.appendChild(i); });
-  f.submit(); markSaved(list.map(x => x.name)); toastMsg(`Downloading ${list.length} as a ZIP file`, false); }
+  f.submit(); markSaved(list.map(x => x.name)); }
 // pick from the full-screen viewer too
 function lbPick(){ const t = grid.querySelector(`.it[data-i="${cur}"]`); if (!t) return;
   if (!selecting) toggleSelect(); t.classList.toggle('sel'); upd();
@@ -366,9 +448,15 @@ function jobTap(){
   if (cur.files) shareCurrent();
 }
 function cancelJob(){ job = null; $('job').classList.remove('on'); $('jobshade').classList.remove('on'); }
-function saveAll(){ startJob(visibleItems(false)); }
-function saveSelectedM(){ startJob(visibleItems(true)); }
-function saveCurrent(){ startJob([items[cur]]); }
+function saveGuard(list){ if (!list.length) return; if (sizeOf(list) <= BIG) return startJob(list);
+  const vids = list.filter(x => x.video), pics = list.filter(x => !x.video), btns = [];
+  if (vids.length && pics.length) btns.push({label: `Photos only: ${pics.length} (${fmt(sizeOf(pics))})`, primary: true,
+    sub: `Skips the ${vids.length} video${vids.length > 1 ? 's' : ''}, which are most of the size`, fn: () => startJob(pics)});
+  btns.push({label: list.length === 1 ? `Save it (${fmt(sizeOf(list))})` : `Save all ${list.length} (${fmt(sizeOf(list))})`, primary: !btns.length, fn: () => startJob(list)});
+  askBig(list, list.length === 1 ? (list[0].video ? 'This video' : 'This file') : `These ${list.length} files`, btns); }
+function saveAll(){ saveGuard(visibleItems(false)); }
+function saveSelectedM(){ saveGuard(visibleItems(true)); }
+function saveCurrent(){ saveGuard([items[cur]]); }
 fitBar();
 </script>
 {% endblock %}

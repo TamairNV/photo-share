@@ -138,6 +138,20 @@ def note_fail(key):
     _fails.setdefault(key, []).append(time.time())
 
 
+_recent_dl: dict = {}
+
+
+def first_download(key, window=300):
+    """True unless this same download was already started within the last `window` seconds."""
+    now = time.time()
+    if len(_recent_dl) > 5000:
+        for k in [k for k, t in _recent_dl.items() if now - t > window]:
+            _recent_dl.pop(k, None)
+    fresh = now - _recent_dl.get(key, 0) > window
+    _recent_dl[key] = now
+    return fresh
+
+
 def client_ip(request):
     return request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
 
@@ -455,7 +469,7 @@ templates.env.filters["q"] = lambda s: quote(s, safe="")
 def fmt_size(n):
     for u in ("B", "KB", "MB", "GB"):
         if n < 1024:
-            return f"{n:.0f} {u}"
+            return f"{n:.1f} {u}" if u == "GB" else f"{n:.0f} {u}"
         n /= 1024
     return f"{n:.1f} TB"
 
@@ -669,9 +683,12 @@ def original(request: Request, token: str, name: str, dl: int = 0):
     slug, ev = guest_event(request, token)
     p = get_file(slug, name)
     if dl:
-        if not request.session.get("admin"):
-            bump(slug, "downloads")
-        stats.log("download", request, slug, item=name, nbytes=p.stat().st_size, who=actor(request, ev))
+        # people re-tap Download when a big file seems to do nothing, and resumes re-request it:
+        # count one download per person per file every few minutes
+        if first_download((client_ip(request), slug, name)):
+            if not request.session.get("admin"):
+                bump(slug, "downloads")
+            stats.log("download", request, slug, item=name, nbytes=p.stat().st_size, who=actor(request, ev))
         # not edge-cached so the download counter stays right
         return BigFileResponse(p, filename=p.name, content_disposition_type="attachment",
                                headers={"Cache-Control": "private, max-age=3600"})
