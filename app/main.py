@@ -975,6 +975,22 @@ def admin_thumb(request: Request, slug: str, name: str):
     return BigFileResponse(resized(slug, name, "thumb"), headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
+@app.get("/admin/events/{slug}/preview/{name:path}")
+def admin_preview(request: Request, slug: str, name: str):
+    require_admin(request)
+    return BigFileResponse(resized(slug, name, "preview"), headers={"Cache-Control": "private, max-age=31536000, immutable"})
+
+
+@app.get("/admin/events/{slug}/file/{name:path}")
+def admin_file(request: Request, slug: str, name: str, dl: int = 0):
+    """Full-size original for the admin page: no stats, no download counter, works with the share link off."""
+    require_admin(request)
+    p = get_file(slug, name)
+    if dl:
+        return BigFileResponse(p, filename=p.name, content_disposition_type="attachment", headers={"Cache-Control": "private, max-age=3600"})
+    return BigFileResponse(p, headers={"Cache-Control": "private, max-age=31536000, immutable"})  # Range requests for video seeking
+
+
 # ---------- stats dashboard ----------
 RANGES = {"24h": (86400, 3600), "7d": (7 * 86400, 6 * 3600), "30d": (30 * 86400, 86400), "90d": (90 * 86400, 86400)}
 FILES_OUT = "kind IN ('download','zip','save')"  # things that put files on someone's device
